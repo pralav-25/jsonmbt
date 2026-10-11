@@ -29,7 +29,9 @@ fn is_reserved_label(name : String) -> Bool {
 /// 实锤：曾只验首字符，"memory.dump" 带点键直进产物 → J1001——审 A4
 /// 形态的 label 通道变体）
 fn is_legal_label(name : String) -> Bool {
-  if name == "" || is_reserved_label(name) {
+  // "_" 单独非法（#32-3）：moon 字段位拒 _（通配符非标识符）——放行会让
+  // 空键经 k+"_" 伪装合法、"_ " 键直出非法字段触发保险丝
+  if name == "" || name == "_" || is_reserved_label(name) {
     return false
   }
   let chars = name.to_array()
@@ -103,17 +105,11 @@ fn ident_continue_ok(c : Char) -> Bool {
 }
 
 ///|
-/// 键是否「保留字类可改名」：本体非法但加一根下划线即合法（where → where_，
-/// 探针实锚合法 + fmt 幂等）。点号/大写开头等形态加下划线仍非法 → 不可改名，
-/// 维持 Map 逃生门（#13 批范围 = 保留字）
-fn is_sanitizable_label(name : String) -> Bool {
-  !is_legal_label(name) && is_legal_label(name + "_")
-}
-
-///|
 /// 确定性字段改名（对象内首见序）：合法键恒等；保留字 + "_"；与先前键的
 /// 改名撞车则续加下划线（原生 where_ 顶到 where__）。真键由 field-alias
 /// 注记承载（纯语法逆映射在尾下划线邻域数学上不可无歧义——注记是唯一全解）
+/// 「可改名」判定 = walk_value:618 的 is_legal_label(k) || is_legal_label(k+"_")
+/// 内联（原独立谓词 is_sanitizable_label 零调用死代码——#32-20 删除）
 fn sanitize_field_label(key : String, taken : Array[String]) -> String {
   let mut cand = if is_legal_label(key) { key } else { key + "_" }
   while taken.contains(cand) {
@@ -675,6 +671,11 @@ fn register_tagged_enum_hint(
     return
   }
   let k = keys[0]
+  // 空键守卫（#32-3）：k[0] 对空串越界 panic——绕过 J 码通道与 rc 五值；
+  // 空键本身也非 tag 形态（大写开头），提前返回
+  if k == "" {
+    return
+  }
   let first = k[0]
   let looks_tag = first >= 'A' &&
     first <= 'Z' &&
@@ -851,7 +852,8 @@ fn lub(
         // 是 shape inference 内部命名，无法定位）
         raise keyset_drift_diag(ctx, in_array, at_map)
       }
-    (JTMap(_, v1), JTMap(_, v2)) => JTMap(JTString, lub(ctx, v1, v2, in_array~))
+    (JTMap(_, v1), JTMap(_, v2)) =>
+      JTMap(JTString, lub(ctx, v1, v2, in_array~, at_map~))
     (JTNullLike, t) | (t, JTNullLike) => t // null 由上层聚合 Option
     // 审 P1-a：#20 元素位自聚合后 JTOption 首次流入 lub（旧实现靠
     // (JTNullLike,t) 静默吞掉的空洞被暴露——Int? vs Int? 落 hetero）。

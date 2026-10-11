@@ -95,7 +95,9 @@ fn collect_json_mbt(
     if e.has_suffix(".json.mbt") {
       out.push((disp, full, dir))
     } else if dir_exists(full) &&
-      !e.has_prefix(".") &&
+      // #32-20（#29 同族）：点目录一刀切漏扫 .github/.vscode 类人写配置——
+      // 对齐 migrate 跳过表（显式跳 .git/_build/node_modules/target）
+      e != ".git" &&
       e != "_build" &&
       e != "node_modules" &&
       e != "target" {

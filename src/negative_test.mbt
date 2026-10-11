@@ -360,3 +360,43 @@ test "审 P1-b : 花括号转义代理区拒收（与定长 \\uXXXX 分支同款
   inspect(cps.length() >= 3, content="true")
   inspect(cps[1].to_int(), content="1114111")
 }
+
+///|
+test "J2007 : enum payload 位嵌套 Option 同拦（#32-10——曾绕过预检静默压平）" {
+  expect_diag(
+    "enum E {\n  A(Int??)\n}\npub let t : E = A(None)\n",
+    "jsonmbt: error [J2007] t.json.mbt:4:1 nested Option (T??) is outside the L0 subset — degradation would silently flatten None and Some(None) into the same null\n  help: use T? for nullable; the three-state encoding (absent vs null vs value) is under review — model the distinction by hand until then",
+  )
+}
+
+///|
+test "J2006 : enum 与 struct 同名顺序无关（#32-11——enum 在前曾漏报）" {
+  expect_diag(
+    "enum T {\n  A\n}\nstruct T {\n  x : Int\n}\npub let t : T = T::{ x: 1 }\n",
+    "jsonmbt: error [J2006] t.json.mbt:4:1 duplicate struct definition 'T'\n  help: rename one of the structs; .json.mbt keeps one schema per name",
+  )
+}
+
+///|
+test "#32-19 : 臂级负样本——J3003 UInt/UInt64 字面量（parser 收、L0 拒）" {
+  expect_diag("pub let t = 1U", "jsonmbt: error [J3003] t.json.mbt:1:13 UInt literal has no JSON counterpart\n  help: JSON values are null/bool/number/string/array/object only")
+  expect_diag("pub let t = 1UL", "jsonmbt: error [J3003] t.json.mbt:1:13 UInt64 literal has no JSON counterpart\n  help: JSON values are null/bool/number/string/array/object only")
+}
+
+///|
+test "#32-19 : 兜底臂与重复字段臂——Tuple 走 J3001 白名单外、record 重复字段 J3007" {
+  // Tuple 自由值直达 `_` 兜底臂（头注释「不设 null 兜底」教训的锚定）
+  expect_diag("pub let t = (1, 2)", "jsonmbt: error [J3001] t.json.mbt:1:13 this expression is outside the L0 pure-literal subset\n  help: use a literal value (record, array, map, or scalar); for anything computed, write real MoonBit instead")
+  expect_diag(
+    "struct T {\n  a : Int\n}\npub let t : T = T::{ a: 1, a: 2 }\n",
+    "jsonmbt: error [J3007] t.json.mbt:4:28 duplicate field 'a'\n  help: merge the two values into one; a degraded object never carries duplicate keys",
+  )
+}
+
+///|
+test "#32-19 : enum 与 enum 同名（Variant 臂双向查重的对侧锚）" {
+  expect_diag(
+    "enum T {\n  A\n}\nenum T {\n  B\n}\npub let t = T::A\n",
+    "jsonmbt: error [J2006] t.json.mbt:4:1 duplicate type definition 'T'\n  help: rename one of the types; .json.mbt keeps one schema per name",
+  )
+}

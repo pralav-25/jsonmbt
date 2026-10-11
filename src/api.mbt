@@ -97,10 +97,15 @@ pub fn sanitize_stem(name : String) -> String {
   let legal_head = (first >= 'a' && first <= 'z') ||
     first == '_' ||
     first.to_int() >= 0x80
-  if legal_head {
-    out
+  let bound = if legal_head { out } else { "x_" + out }
+  // 复查至不动点（#32-6）：清洗可产生新的坏形态——"Type"→"type"（保留字）、
+  // "_"→"_"（moon 拒裸下划线 binding）——曾直接返回，大写保留字 stem 全链
+  // 死锁（import 保险丝甩锅 J0002 generator bug）。x_ 前缀后不再可能命中，
+  // 一轮即不动点
+  if is_reserved_label(bound) || bound == "_" {
+    "x_" + bound
   } else {
-    "x_" + out
+    bound
   }
 }
 
@@ -217,16 +222,19 @@ pub fn fill_source(
   existing_src : String,
   path? : String = "<json>",
   fill_path? : String = "",
-  stem~ : String,
+  stem? : String, // 期望名来源（缺省 = 不校验——#32-5④：fill 只重写值体，
+  // 头/绑定名来自盘上产物，期望名不应绑**源 JSON** 文件名）
   jsonc? : Bool = true, // D-9（#22）：与 import_source 同口径
 ) -> String raise Diag {
-  let stem = sanitize_stem(stem)
   let root = json_parse(
     if jsonc { strip_jsonc(json_text) } else { json_text },
     fname=path,
   )
   // 既有产物必须先过自家校验（合法 .json.mbt 才有可用的类型头）
-  let expected_name = Some(stem)
+  let expected_name : String? = match stem {
+    Some(s) => Some(sanitize_stem(s))
+    None => None
+  }
   let doc = analyze(existing_src, path=fill_path, expected_name?)
   let root_ty : JType? = match doc.root_ty {
     Some(t) => Some(resolve_custom(doc.structs, doc.enums, t))
@@ -284,5 +292,27 @@ pub fn fill_source(
         path=fill_path,
       )
   }
-  existing_src[:eq].to_owned() + value + "\n"
+  let content = existing_src[:eq].to_owned() + value + "\n"
+  // 回吃保险丝（#32-5⑤，与 import 同款）：头逐字节保留 + 新值体的合成
+  // 产物丢回自家校验器——render 链任何非法形态在落盘前 fail loud
+  // （曾靠层外 moon check 才发现 enum 位 Map 形态）
+  check_source(content, path=(if fill_path == "" { path + ".mbt" } else { fill_path }), expected_name?) catch {
+    e => {
+      let detail : String = if e is Diag(..) {
+        e.render()
+      } else {
+        "non-Diag error"
+      }
+      raise Diag(
+        code=JIO,
+        loc=dummy_loc(),
+        message="internal: fill produced an invalid .json.mbt (generator bug); failing check says: \{detail}",
+        help=Some(
+          "please report this with the input JSON and the fill target — the generator must never emit invalid output",
+        ),
+        path~,
+      )
+    }
+  }
+  content
 }

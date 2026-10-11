@@ -274,6 +274,18 @@ fn analyze(
       scan_supported_type(f.1, f.2)
     }
   }
+  // enum payload 同面预检（#32-10）：payload 位 T?? 曾绕过——值层 payload_case
+  // 直接使用期望类型，None 与 Some(None) 降级静默压平成同一 null（struct 字段
+  // 位有预检、payload 位漏 = 同族臂不对称）；变体级 loc 未入表，借用顶层绑定 loc
+  let eds : Array[EnumDef] = []
+  tyenv.enums.each(fn(_, v) { eds.push(v) })
+  for ed in eds {
+    let pts : Array[JType] = []
+    ed.payload_types.each(fn(_, pt) { pts.push(pt) })
+    for pt in pts {
+      scan_supported_type(pt, loc)
+    }
+  }
   let root_ty : JType? = match ty {
     Some(t) => {
       scan_supported_type(parse_type(t), loc)
@@ -317,7 +329,19 @@ fn scan_supported_type(t : JType, loc : @basic.Location) -> Unit raise Diag {
     }
     JTArray(t) => scan_supported_type(t, loc)
     JTMap(k, v) => {
-      scan_supported_type(k, loc)
+      // #32-20：Map 键位非 String 先于值层报（曾落值层 J3004——层/码漂移：
+      // 类型头问题该走 J2007 预检通道）
+      if !(k is JTString) {
+        raise Diag(
+          code=JBadFieldType,
+          loc~,
+          message="map key type must be String, got '\{k.show()}' (JSON objects only have string keys)",
+          help=Some(
+            "supported field types: Int/Int64/Double/String/Bool/T? (Option)/Array[T]/Map[String,T]/struct",
+          ),
+          path="",
+        )
+      }
       scan_supported_type(v, loc)
     }
     _ => ()

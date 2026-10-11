@@ -58,6 +58,21 @@ fn comment_to_spaces(
 }
 
 ///|
+/// 块注释闭合预检（#32-7）：`/*` 起点向后找不到 `*/` = 未闭合——D-9
+/// 「不收」清单项，调用方不消解、剩余原文透传给 parser 拒（曾消费到
+/// EOF 静默消解成合法输入——json 严格档拒而 jsonc 档收，档间自相矛盾）
+fn block_comment_closed(view : Array[Char], n : Int, start : Int) -> Bool {
+  let mut i = start + 2
+  while i + 1 < n {
+    if view[i] == '*' && view[i + 1] == '/' {
+      return true
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
 /// last_sig ∈ 不消解族（文件首哨兵 / 结构开括号 / 逗号 / 冒号）判定——
 /// 开头逗号、孤立逗号、值缺失逗号全部由此落在「保留给 parser 拒」侧
 fn comma_unsolvable(last_sig : Char) -> Bool {
@@ -87,6 +102,19 @@ pub fn strip_jsonc(src : String) -> String {
         continue
       }
       if c == '/' && i + 1 < n && (view[i + 1] == '/' || view[i + 1] == '*') {
+        if view[i + 1] == '*' && !block_comment_closed(view, n, i) {
+          // 未闭合块注释（#32-7）：暂存原样 flush + 剩余透传——parser 在
+          // '/' 本位报 trailing content
+          for ch in pending {
+            buf.write_char(ch)
+          }
+          pending.clear()
+          while i < n {
+            buf.write_char(view[i])
+            i = i + 1
+          }
+          return buf.to_string()
+        }
         let (spaces, ni) = comment_to_spaces(view, n, i)
         for sc in spaces {
           pending.push(sc)
@@ -150,6 +178,15 @@ pub fn strip_jsonc(src : String) -> String {
     }
     // 行注释 / 块注释：等长空格（last_sig 不受影响）
     if c == '/' && i + 1 < n && (view[i + 1] == '/' || view[i + 1] == '*') {
+      if view[i + 1] == '*' && !block_comment_closed(view, n, i) {
+        // 未闭合块注释（#32-7）：剩余原文透传（与未闭合字符串同款交给
+        // parser 报错——字符串感知剥离只对**闭合的**注释生效）
+        while i < n {
+          buf.write_char(view[i])
+          i = i + 1
+        }
+        return buf.to_string()
+      }
       let (spaces, ni) = comment_to_spaces(view, n, i)
       for sc in spaces {
         buf.write_char(sc)

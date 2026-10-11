@@ -47,6 +47,9 @@ func writeFile(dir, name, content string) string {
 	return p
 }
 
+// skippedCases：因环境缺席跳过的用例数（#32-14——汇总行显式报告）
+var skippedCases int
+
 type testCase struct {
 	name string
 	run  func(exe, dir string) error
@@ -174,6 +177,35 @@ func caseImportCheckGate(exe, dir string) error {
 	return nil
 }
 
+// crlf-normalize-eol：CRLF 产物幂等闸必须绿——normalize_eol 曾用 core
+// String::replace（只换首处），多行 CRLF 残留 → J5001 假红（#32-1 红锚；
+// CRLF 只来自外部 checkout/编辑器，自家产物恒 LF，故须专门构造）。
+func caseCrlfNormalizeEol(exe, dir string) error {
+	writeFile(dir, "g.json", "{\"k\": [1, 2], \"u\": \"http://x/y\", \"cfg\": {\"id\": 1, \"name\": \"n\"}}\n")
+	// 先真实落盘拿产物（不走 -o -，与 check 侧重算产物同路径），再把整个
+	// 文件 CRLF 化回写——模拟外部 checkout/编辑器的行尾改写
+	rc, _, _, err := runExe(exe, dir, "import", "g.json")
+	if err != nil || rc != 0 {
+		return fmt.Errorf("import rc=%d err=%v", rc, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "g.json.mbt"))
+	if err != nil {
+		return err
+	}
+	crlf := strings.ReplaceAll(string(raw), "\n", "\r\n")
+	if err := os.WriteFile(filepath.Join(dir, "g.json.mbt"), []byte(crlf), 0o644); err != nil {
+		return err
+	}
+	rc, _, stderr, err := runExe(exe, dir, "import", "g.json", "--check")
+	if err != nil {
+		return err
+	}
+	if rc != 0 {
+		return fmt.Errorf("CRLF 产物幂等应绿（行尾归一后比对）：rc = %d, stderr=%q", rc, stderr)
+	}
+	return nil
+}
+
 // usage-rc4：无参/未知动词 → rc 4（D-10 用法错）。
 func caseUsageRC4(exe, dir string) error {
 	for _, args := range [][]string{{}, {"frobnicate", "x"}} {
@@ -215,6 +247,13 @@ func exeFreshness(exe string) error {
 	exeMtime := st.ModTime()
 	var stale []string
 	root := "."
+	// 输入根不可达 ≠ 无过期输入（#32-14：目录读不到时 WalkDir err 被吞 =
+	// 零 stale = 通过——「检查不到」与「没有过期」不可同型，先 fail loud）
+	for _, dir := range []string{"src", "cmd"} {
+		if _, err := os.Stat(filepath.Join(root, dir)); err != nil {
+			return fmt.Errorf("freshness 输入根不可达（cwd 不是仓库根？）: %s: %w", dir, err)
+		}
+	}
 	for _, dir := range []string{"src", "cmd"} {
 		filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
@@ -250,6 +289,7 @@ func caseProbeSamples(exe, dir string) error {
 		return fmt.Errorf("probe/samples 不可读: %w", err)
 	}
 	ran := 0
+	var badSamples []string
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".json.mbt") {
@@ -264,23 +304,29 @@ func caseProbeSamples(exe, dir string) error {
 		if err != nil {
 			return fmt.Errorf("样本 %s 缺 .json 黄金: %w", name, err)
 		}
+		// 累积报全（#32-18：return-first 一次只见第一个坏样本，诊断翻倍轮）
 		if rc, _, _, err := runExeWithStdin(exe, dir, string(src), "check", "-"); err != nil || rc != 0 {
-			return fmt.Errorf("样本 %s check rc=%d err=%v", name, rc, err)
+			badSamples = append(badSamples, fmt.Sprintf("样本 %s check rc=%d err=%v", name, rc, err))
+			continue
 		}
 		rc, out, _, err := runExeWithStdin(exe, dir, string(src), "build", "-")
 		if err != nil || rc != 0 {
-			return fmt.Errorf("样本 %s build rc=%d err=%v", name, rc, err)
+			badSamples = append(badSamples, fmt.Sprintf("样本 %s build rc=%d err=%v", name, rc, err))
+			continue
 		}
 		// 尾部行尾（Windows runtime println 发 \r\n）不属产物语义：双侧归一后逐字节比
 		got := bytes.TrimRight(out, "\r\n")
 		want := bytes.TrimRight(golden, "\r\n")
 		if !bytes.Equal(got, want) {
-			return fmt.Errorf("样本 %s build 产物与黄金不一致\n--golden--\n%q\n--got--\n%q", name, want, got)
+			badSamples = append(badSamples, fmt.Sprintf("样本 %s build 产物与黄金不一致\n--golden--\n%q\n--got--\n%q", name, want, got))
 		}
 	}
-		if ran == 0 {
-			return fmt.Errorf("probe/samples 无样本（门禁空转）")
-		}
+	if len(badSamples) > 0 {
+		return fmt.Errorf("probe-samples %d 组坏样:\n%s", len(badSamples), strings.Join(badSamples, "\n"))
+	}
+	if ran == 0 {
+		return fmt.Errorf("probe/samples 无样本（门禁空转）")
+	}
 	// 第二循环（#22/D-9）：JSONC 输入面消费——.jsonc 样本（注释/尾逗号/
 	// BOM 三合一）经 stdin import（-o 出文件名提供 stem）再 build 与
 	// 同名 .json golden 比对（值链等价）；同输入 --input json 档必拒
@@ -730,6 +776,7 @@ func caseDoctorClean(exe, dir string) error {
 func caseFmtFixedPoint(exe, dir string) error {
 	if _, err := exec.LookPath("moon"); err != nil {
 		fmt.Println("SKIP fmt-fixed-point（moon 缺席）")
+		skippedCases++
 		return nil
 	}
 	// 输入集：probe/samples 全部 .json / .jsonc + 一张含换行长文案的合成
@@ -752,6 +799,11 @@ func caseFmtFixedPoint(exe, dir string) error {
 	inputs["synth_newline.json"] = "{\"items\":[\"one\\ntwo\\nthree\\nfour five six seven eight nine ten\",\"s\",1,2,3,true,null]}"
 	inputs["synth_wide.json"] = "{\"f1\":111111,\"f2\":222222,\"f3\":333333,\"f4\":444444,\"f5\":555555,\"f6\":666666,\"f7\":777777,\"f8\":888888,\"f9\":999999,\"f10\":1111110,\"f11\":1222221,\"f12\":1333332}"
 	inputs["synth_arr.json"] = "[" + strings.Repeat("\"elem\",", 24) + "\"last\"]"
+	// #32-4 梯度宽度样本：顶层 record 整行落在 fmt 界两侧（82 收 / 83 展开）
+	// ——宽度常数错位时 mid/hi 之一必红（曾 81-84 区间全盲）
+	inputs["w1.json"] = "{\"a\":\"" + strings.Repeat("x", 30) + "\"}"          // 整行 ~64（稳定单行区）
+	inputs["w2.json"] = "{\"a\":\"" + strings.Repeat("x", 49) + "\"}"          // 整行恰 83（界外一档）
+	inputs["w3.json"] = "{\"a\":\"" + strings.Repeat("x", 90) + "\",\"b\":2}" // 深入块区
 
 	// 影子 moon 项目（最小骨架——doctor fmt_shadow 实锚：name+version 即被接受）
 	shadow := filepath.Join(dir, "shadow")
@@ -1375,8 +1427,12 @@ var cases = []testCase{
 	{"reserved-stem-chain", caseReservedStemChain},
 	{"fmt-fixed-point", caseFmtFixedPoint},
 	{"probe-samples-golden", caseProbeSamples},
+	{"sample-import-regen", caseSampleImportRegen},
 	{"build-stdout-deterministic", caseBuildDeterministic},
 	{"import-check-idempotent", caseImportCheckGate},
+	{"crlf-normalize-eol", caseCrlfNormalizeEol},
+	{"verb-flag-misuse", caseVerbFlagMisuse},
+	{"uppercase-reserved-stem", caseUppercaseReservedStem},
 	{"usage-rc4", caseUsageRC4},
 	{"pretty-vs-go-encoder", casePrettyVsGoEncoder},
 	{"pretty-key-order", casePrettyKeyOrder},
@@ -1401,6 +1457,7 @@ var cases = []testCase{
 	{"migrate-taken-twins", caseMigrateTakenTwins},
 	{"never-placeholder", caseNeverPlaceholder},
 	{"fill", caseFill},
+	{"fill-source-name-mismatch", caseFillSourceNameMismatch},
 	{"default-output-name", caseDefaultOutputName},
 	{"doctor-pipe-hint", caseDoctorPipeHint},
 	{"jsonc-input-profile", caseJsoncInputProfile},
@@ -1445,6 +1502,7 @@ func main() {
 		os.Exit(1)
 	}
 	fails := 0
+	skippedCases = 0
 	for _, c := range cases {
 		dir, err := os.MkdirTemp("", "jsonmbt-l2-*")
 		if err != nil {
@@ -1459,8 +1517,157 @@ func main() {
 			fmt.Printf("pass %s\n", c.name)
 		}
 	}
-	fmt.Printf("total=%d failed=%d\n", len(cases), fails)
+	// skipped 必须进自我报告（#32-14：SKIP 与真跑在 total=N failed=0 下不可
+	// 区分 = 防线自我报告失真；无 moon 的下游消费者据此知道金门未生效）
+	fmt.Printf("total=%d failed=%d skipped=%d\n", len(cases), fails, skippedCases)
 	if fails > 0 {
 		os.Exit(1)
 	}
+}
+
+// verb-flag-misuse：build/check 上的 import 专属/产物 flags 必须拒（rc 4）——
+// #32-13：曾静默忽略（build x --check 产物照写、check -o/--pretty 无声过），
+// 「防静默无效参数」纪律同批装全。
+func caseVerbFlagMisuse(exe, dir string) error {
+	writeFile(dir, "g.json.mbt", "pub let g = 1\n")
+	for _, args := range [][]string{
+		{"build", "g.json.mbt", "--check"},
+		{"build", "g.json.mbt", "--fmt"},
+		{"check", "g.json.mbt", "-o", "x.json"},
+		{"check", "g.json.mbt", "--pretty"},
+		{"check", "g.json.mbt", "--indent", "2"},
+	} {
+		rc, _, _, err := runExe(exe, dir, args...)
+		if err != nil {
+			return err
+		}
+		if rc != 4 {
+			return fmt.Errorf("args=%v rc = %d, want 4（静默忽略 = 无效参数纪律破口）", args, rc)
+		}
+	}
+	return nil
+}
+
+// uppercase-reserved-stem：大写保留字 stem（Match.json）import 必须成功且
+// 绑定 x_match（#32-6：清洗后撞保留字曾全链死锁、甩锅 J0002 generator bug）。
+func caseUppercaseReservedStem(exe, dir string) error {
+	writeFile(dir, "Match.json", "{\"a\":1}\n")
+	rc, _, stderr, err := runExe(exe, dir, "import", "Match.json")
+	if err != nil {
+		return err
+	}
+	if rc != 0 {
+		return fmt.Errorf("import Match.json rc = %d, want 0, stderr=%q", rc, stderr)
+	}
+	prod, err := os.ReadFile(filepath.Join(dir, "Match.json.mbt"))
+	if err != nil {
+		return err
+	}
+	if !bytes.Contains(prod, []byte("pub let x_match")) {
+		return fmt.Errorf("产物应含 pub let x_match，got %q", prod)
+	}
+	// 落盘产物自查：build 同口径消费（D-7 期望名 = sanitize_stem("Match")）
+	rc, _, stderr, err = runExe(exe, dir, "build", "Match.json.mbt", "-o", "-")
+	if err != nil || rc != 0 {
+		return fmt.Errorf("build Match.json.mbt rc=%d stderr=%q", rc, stderr)
+	}
+	return nil
+}
+
+// fill-source-name-mismatch：--fill 的期望名不应绑源 JSON 文件名——fill 语义
+// 是保留目标文件类型头，源与目标不同名是常态（#32-5④：曾 J2003 误拦，
+// 文案还引导用户改绑定名 = 破坏头保留）。
+func caseFillSourceNameMismatch(exe, dir string) error {
+	writeFile(dir, "data.json", "{\"a\": 1}\n")
+	if rc, _, _, err := runExe(exe, dir, "import", "data.json", "-o", "out1.json.mbt"); err != nil || rc != 0 {
+		return fmt.Errorf("import rc=%d err=%v", rc, err)
+	}
+	writeFile(dir, "data2.json", "{\"a\": 2}\n")
+	rc, _, stderr, err := runExe(exe, dir, "import", "data2.json", "--fill", "out1.json.mbt")
+	if err != nil {
+		return err
+	}
+	if rc != 0 {
+		return fmt.Errorf("异名源 fill 应 rc 0（期望名绑错源文件名曾 J2003）：rc=%d stderr=%q", rc, stderr)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "out1.json.mbt"))
+	if !bytes.Contains(got, []byte("a: 2")) {
+		return fmt.Errorf("值体应更新为 a: 2，got %q", got)
+	}
+	return nil
+}
+
+// sample-import-regen：样本锚中间层（期望 .json.mbt）的 import 再生闸（#32-8）。
+// 现有 probe-samples 只消费「.json.mbt → build == .json」单向——import 再生
+// 方向零闸，生成器漂移后期望文件静默过期（escapes 曾停在 #18 前形态）。
+// 比对口径：剥 @generated 头两行（源路径形态随调用方式变，非语义内容）+
+// 行尾归一后逐字节。豁免清单 = 纪律 13「import ≠ 合格——人工审阅命名是必
+// 需环节」的机判化承载：每条豁免显式带理由。
+func caseSampleImportRegen(exe, dir string) error {
+	// 豁免清单（人写范本/命名示范：期望形态展示人工审阅结果，不追机械再生）
+	exempt := map[string]string{
+		"server.json.mbt":        "人写 T? 建模范本（import 拒 J4003 单样本 null——示范手写类型头）",
+		"paren_payload.json.mbt": "人写校验器面样本（#25 冗余圆括号——示范形态非 import 产物）",
+		"tsconfig_like.json.mbt": "人工审阅命名示范（期望 CompilerOptions vs 机械派生 Strict——纪律 13 活样本）",
+		"vitals.json.mbt":        "人工审阅命名示范（期望 Inner vs 机械派生 X——纪律 13 活样本）",
+	}
+	entries, err := os.ReadDir(filepath.Join("probe", "samples"))
+	if err != nil {
+		return err
+	}
+	ran := 0
+	var bad []string
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json.mbt") {
+			continue
+		}
+		if reason, ok := exempt[name]; ok {
+			fmt.Printf("  skip %s（豁免：%s）\n", name, reason)
+			continue
+		}
+		jsonPath := filepath.Join("probe", "samples", name[:len(name)-len(".mbt")])
+		ran++
+		// 输入复制进临时目录（import 需文件名提供 stem；子进程 cwd=dir，
+		// 仓库相对路径不可达）。头注记的源路径形态已剥除，不参与比对
+		raw, err := os.ReadFile(jsonPath)
+		if err != nil {
+			return err
+		}
+		base := filepath.Base(jsonPath)
+		if err := os.WriteFile(filepath.Join(dir, base), raw, 0o644); err != nil {
+			return err
+		}
+		rc, out, stderr, err := runExe(exe, dir, "import", base, "-o", "-")
+		if err != nil || rc != 0 {
+			bad = append(bad, fmt.Sprintf("%s import rc=%d err=%v stderr=%q", name, rc, err, stderr))
+			continue
+		}
+		want, err := os.ReadFile(jsonPath + ".mbt")
+		if err != nil {
+			return err
+		}
+		got := strings.TrimRight(stripGenHeader(string(out)), "\r\n")
+		w := strings.TrimRight(stripGenHeader(string(want)), "\r\n")
+		if !bytes.Equal([]byte(strings.ReplaceAll(got, "\r\n", "\n")), []byte(strings.ReplaceAll(w, "\r\n", "\n"))) {
+			bad = append(bad, fmt.Sprintf("%s 期望 .json.mbt 与 import 再生产物不一致（生成器漂移未重锚？）\n--期望--\n%s\n--再生--\n%s", name, w, got))
+		}
+	}
+	if ran == 0 {
+		return fmt.Errorf("再生闸空转（全部豁免？）")
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("sample-import-regen %d 组漂移:\n%s", len(bad), strings.Join(bad, "\n"))
+	}
+	return nil
+}
+
+// stripGenHeader：剥 @generated 头两行（再生成提示 + 源路径——路径形态随
+// import 的入参形态变，非产物语义）
+func stripGenHeader(s string) string {
+	lines := strings.SplitN(s, "\n", 3)
+	if len(lines) == 3 && strings.HasPrefix(lines[0], "// @generated") {
+		return lines[2]
+	}
+	return s
 }

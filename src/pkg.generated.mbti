@@ -12,7 +12,7 @@ pub fn build_value(String, path? : String, expected_name? : String) -> Json rais
 
 pub fn check_source(String, path? : String, expected_name? : String) -> Unit raise Diag
 
-pub fn fill_source(String, String, path? : String, fill_path? : String, stem~ : String, jsonc? : Bool) -> String raise Diag
+pub fn fill_source(String, String, path? : String, fill_path? : String, stem? : String, jsonc? : Bool) -> String raise Diag
 
 pub fn import_source(String, path? : String, stem~ : String, taken_names? : Array[String], type_name_map? : Map[String, String], strict? : Bool, jsonc? : Bool) -> ImportOutcome raise Diag
 

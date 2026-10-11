@@ -72,7 +72,9 @@ fn print_hint(e : @src.Diag) -> Unit {
 ///|
 /// 行尾归一（CRLF→LF）后比对（纪律 11：幂等闸的比对口径）
 fn normalize_eol(s : String) -> String {
-  s.replace(old="\r\n", new="\n")
+  // replace_all：core String::replace 只换第一处（#32-1 实锤——多行 CRLF
+  // 残留让幂等闸/doctor/migrate 三面假红；CRLF 只来自外部 checkout）
+  s.replace_all(old="\r\n", new="\n")
 }
 
 ///|
@@ -705,6 +707,32 @@ fn main_rc() -> Int {
       "--input applies to import/migrate only (build takes .json.mbt sources, not JSON)",
     )
   }
+  // verb 专属 flags（#32-13）：--check/--fmt 是 import 的幂等/归一闸、-o 与
+  // 输出形态 flags 是产物面——放错 verb 曾静默忽略（build x --check 产物照写、
+  // check -o 无声过），「防静默无效参数」纪律同批装全
+  if verb == "build" && (do_check || do_fmt) {
+    return jdiag_exit(
+      @src.JUsage,
+      "--check/--fmt applies to import only (build always validates its product; use import --check for the idempotence gate)",
+    )
+  }
+  if verb == "check" {
+    if do_check || do_fmt {
+      return jdiag_exit(
+        @src.JUsage,
+        "--check/--fmt applies to import only (check is already the validation dry-run)",
+      )
+    }
+    if out_opt is Some(_) {
+      return jdiag_exit(@src.JUsage, "-o applies to build/import only (check writes nothing)")
+    }
+    if do_pretty || do_indent is Some(_) {
+      return jdiag_exit(
+        @src.JUsage,
+        "--pretty/--indent shape build output only (check writes nothing)",
+      )
+    }
+  }
   if paths.length() > 1 && out_opt is Some(_) {
     return jdiag_exit(@src.JUsage, "-o accepts a single input")
   }
@@ -845,16 +873,13 @@ fn run_fill(
         ),
       )
   }
-  let stem = match json_stem_of(path) {
-    Some(s) => s
-    None => return jdiag_exit(@src.JUsage, "'\{path}' has no usable stem")
-  }
+  // #32-5④：不传 stem（期望名不绑源 JSON 文件名）——fill 语义 = 保留
+  // 目标文件类型头只重写值体，绑定名校验在产物创建时已发生过
   let filled = @src.fill_source(
     src,
     existing,
     path~,
     fill_path=fill_target,
-    stem~,
     jsonc~,
   ) catch {
     e =>

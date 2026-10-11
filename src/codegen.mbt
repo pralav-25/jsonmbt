@@ -56,6 +56,16 @@ fn render_string_value(s : String) -> String {
 }
 
 ///|
+/// 0..15 → 小写 hex 字符（\u{...} 写侧与 unescape 的 hex 读侧对齐——#32-2）
+fn hex_lc(d : Int) -> Char {
+  if d < 10 {
+    (d + '0'.to_int()).unsafe_to_char()
+  } else {
+    (d - 10 + 'a'.to_int()).unsafe_to_char()
+  }
+}
+
+///|
 /// 解码值 → MoonBit 字面量转义（unescape 的逆向；\u{XX} 小写 hex 惯例）
 fn moonbit_escape(s : String) -> String {
   let buf = StringBuilder()
@@ -74,7 +84,13 @@ fn moonbit_escape(s : String) -> String {
           // 三段运行时拼接：MoonBit 字符串里 \\ 会吃掉紧随的 \{ 插值——
           // 写成单串插值会整段源码落盘（审 P1-2 根因）
           buf.write_string("\\u{")
-          buf.write_string(other.to_int().to_string())
+          // 小写 hex（与 unescape 的 1..6 位 hex 对齐——#32-2 实锤：曾写
+          // 十进制，读侧按 hex 累加，两侧各自合法、值静默错位）
+          let v = other.to_int()
+          if v >= 16 {
+            buf.write_char(hex_lc(v / 16))
+          }
+          buf.write_char(hex_lc(v % 16))
           buf.write_string("}")
         } else {
           buf.write_char(other) // 非 ASCII 按 UTF-8 原样（源文件即 UTF-8）
@@ -247,7 +263,26 @@ fn render_value(
   strict_keys? : Bool = false,
 ) -> String raise Diag {
   match (j, ty) {
-    (Null, _) => "None" // 自由 null；非 Option 期望在推断层不会出现（防御）
+    (Null, t) =>
+      match t {
+        Some(JTOption(_)) | None => "None"
+        Some(other) =>
+          if strict_keys {
+            // #32-5②：fill 语境 null 进非 Option 声明位 = 数据与类型头矛盾
+            // ——曾静默产 None（moon 类型错的产物落盘，rc 0）
+            raise Diag(
+              code=JFieldType,
+              loc=dummy_loc(),
+              message="null cannot fill a non-Option field of type '\{other.show()}'",
+              help=Some(
+                "use T? (Option) in the type header, or supply a value — fill never guesses",
+              ),
+              path="",
+            )
+          } else {
+            "None" // import 防御（推断层保证 null ⇒ Option，此路不可达）
+          }
+      }
     (v, Some(JTOption(t))) =>
       "Some(\{render_value(table, atab, v, Some(t), enums~, strict_keys~)})"
     (True, _) => "true"
@@ -359,6 +394,21 @@ fn fill_enum_variant(
   ename : String,
   o : Map[String, Json],
 ) -> String raise Diag {
+  let (def, v, payload_keys) = resolve_enum_variant(table, atab, enums, ename, o)
+  render_variant_payload(table, atab, enums, def, v, payload_keys, o)
+}
+
+///|
+/// enum 对象 → (定义, 变体名, payload 键集) 消歧（#32-5 重构提出，
+/// inline/block 两形共用）：① tag 键指示（降级产物形态）② 键集精确匹配；
+/// 无匹配 = J3004 fail loud（信息矛盾不该静默选边）
+fn resolve_enum_variant(
+  table : StructTable,
+  atab : AliasTable,
+  enums : Map[String, EnumDef],
+  ename : String,
+  o : Map[String, Json],
+) -> (EnumDef, String, Array[String]) raise Diag {
   let def = match enums.get(ename) {
     Some(d) => d
     None =>
@@ -392,8 +442,7 @@ fn fill_enum_variant(
   }
   let payload_keys : Array[String] = ks.filter(fn(k) { k != "case" })
   match variant {
-    Some(v) =>
-      render_variant_payload(table, atab, enums, def, v, payload_keys, o)
+    Some(v) => (def, v, payload_keys)
     None => {
       // ② 键集精确匹配
       for v in def.payload_variants {
@@ -412,9 +461,7 @@ fn fill_enum_variant(
             let same = payload_keys.length() == implied.length() &&
               payload_keys.iter().all(fn(k) { implied.contains(k) })
             if same {
-              return render_variant_payload(
-                table, atab, enums, def, v, payload_keys, o,
-              )
+              return (def, v, payload_keys)
             }
           }
           _ => ()
@@ -468,6 +515,19 @@ fn render_variant_payload(
           path="",
         )
       }
+      // #32-5③：标量 payload 剥 tag 后必须恰好一键——多余键曾静默吞
+      //（strict_check_keys「静默忽略 = 吞错」同款）
+      if payload_keys.length() > 1 {
+        raise Diag(
+          code=JFieldType,
+          loc=dummy_loc(),
+          message="variant '\{v}' has a scalar payload but the source JSON carries extra keys: \{payload_keys.join(", ")}",
+          help=Some(
+            "a scalar payload takes exactly one value key — drop the extras or model the payload as a struct",
+          ),
+          path="",
+        )
+      }
       "\{v}(\{render_value(table, atab, o.get(payload_keys[0]).unwrap(), Some(strip_option_shallow(other)), enums~, strict_keys=true)})"
     }
     None => "\{v}"
@@ -483,11 +543,14 @@ fn strip_option_shallow(t : JType) -> JType {
 }
 
 ///|
-/// 排版常数（#18 fmt 不动点——2026-10-10 探针实测，层 2 金门校准）
-const FMT_LINE_WIDTH = 84 // record 整行单行界（宽扫 76-91 二分 + p5/p9/C）
+/// 排版常数（#18 fmt 不动点；#32-4 手工规范形重采定界——生成器产物反推会
+/// 因 block 化掩盖真值界，且多文件批扫撞 fmt 缓存假存活，须单文件逐档）：
+/// 顶层整行 ≤80 存活（record/数组同界）；块内字段行 ≤81 存活（record 值
+/// 实测 81/82 分界，数组值实测 ≥83——取保守 81，稳定优先于紧凑）
+const FMT_TOP_WIDTH = 80
 
 ///|
-const FMT_SEQ_WIDTH = 80 // 数组/map 单行界（宽扫实测——与 record 界不同）
+const FMT_LINE_WIDTH = 81 // 块内字段行单行界（field_block_line 整行判定）
 
 ///|
 const FMT_FILL_WIDTH = 84 // 标量数组填满式行宽（金门对账：synth 10 元素 81 收/89 断、B1 83 收/91 断——界 ∈[83,88] 取与行界统一的 84）
@@ -561,8 +624,10 @@ fn render_block(
 ) -> String raise Diag {
   match (j, ty) {
     (v, Some(JTOption(t))) =>
-      // Some( 折（规则 6）：值块缩进 +2、闭 ) 回 indent
-      "Some(\n\{ind(indent + 2)}\{render_block(table, atab, v, Some(t), indent + 2, enums~, strict_keys~)}\n\{ind(indent)})"
+      // Some( 折形 = fmt 规范形（#32-4 探针实测）：Some( 与值首行同行、
+      // 值块以字段缩进为基准、闭 ) 贴块尾（曾产 Some(\\n  折形——fmt 改写
+      // = 不动点破）；短值走 render_value 单行路径不经此处
+      "Some(\{render_block(table, atab, v, Some(t), indent, enums~, strict_keys~)})"
     (Array(elems), t) => {
       let elem_ty : JType? = match t {
         Some(JTArray(et)) => Some(et)
@@ -659,6 +724,23 @@ fn render_block(
       buf.write_string("}")
       buf.to_string()
     }
+    (Object(o), Some(JTEnum(n))) if strict_keys => {
+      // #32-5①：enum 位超宽对象走变体消歧——struct payload 出块形
+      // A(\n  Px::{…}\n)；标量/无参形态复用 inline（曾落到下方 Map 兜底臂
+      // ——enum 位放 Map 字面量 = 非法产物且变体/键集校验整体被跳过）
+      let (def, v, pks) = resolve_enum_variant(table, atab, enums, n, o)
+      let pty = def.payload_types.get(v)
+      match pty {
+        Some(JTStruct(_)) => {
+          let inner : Map[String, Json] = Map([])
+          for k in pks {
+            inner[k] = o.get(k).unwrap()
+          }
+          "\{v}(\n\{ind(indent + 2)}\{render_block(table, atab, Json::object(inner), pty, indent + 2, enums~, strict_keys=true)}\n\{ind(indent)})"
+        }
+        _ => render_variant_payload(table, atab, enums, def, v, pks, o)
+      }
+    }
     (Object(o), t) => {
       // Map 超宽：每对一行（规则 5，无填满式）
       let vt : JType? = match t {
@@ -722,15 +804,10 @@ fn field_block_line(
   }
   let inline = render_value(table, atab, v, vt, enums~, strict_keys~)
   let inline_line = "\{ind(indent)}\{label}: \{inline},"
-  // 数组/Map 的单行判定 = 值形态宽 ≤ FMT_SEQ_WIDTH（规则 4/5——不含行
-  // 前缀）；其余（record/标量/Some）用整行 ≤ FMT_LINE_WIDTH
-  let seq_like = (v is Array(_)) ||
-    (v is Object(_) && !(vt is Some(JTStruct(_))))
-  let fits = if seq_like {
-    line_width(inline) <= FMT_SEQ_WIDTH
-  } else {
-    line_width(inline_line) <= FMT_LINE_WIDTH
-  }
+  // #32-4：单行判定统一 = 整行宽 ≤ FMT_LINE_WIDTH（fmt 真值按整行，与值
+  // 形态宽无关——数组/Map 曾用不含行前缀的值宽口径，78 值宽 + 前缀超界
+  // 产单行被 fmt 展开）
+  let fits = line_width(inline_line) <= FMT_LINE_WIDTH
   if !has_multiline(v) && fits {
     return "\{inline_line}\n"
   }
@@ -752,10 +829,10 @@ fn render_top_value(
   strict_keys? : Bool = false,
   prefix~ : String = "",
 ) -> String raise Diag {
-  // 判定含行前缀（pub let x : T = ）——D 实锤：fmt 收敛界是整行宽
+  // 判定含行前缀（pub let x : T = ）——fmt 收敛界是整行宽（顶层实测 80）
   let inline = render_value(table, atab, j, ty, enums~, strict_keys~)
   let whole = prefix + inline
-  if !has_multiline(j) && line_width(whole) <= FMT_LINE_WIDTH {
+  if !has_multiline(j) && line_width(whole) <= FMT_TOP_WIDTH {
     return inline
   }
   render_block(table, atab, j, ty, 0, enums~, strict_keys~)

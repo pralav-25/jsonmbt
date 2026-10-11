@@ -157,7 +157,9 @@ fn run_migrate(root_arg : String, write : Bool, jsonc? : Bool = true) -> Int {
       }
     }
     let stem = match json_stem_of(full) {
-      Some(s) => sanitize_stem_cli(s)
+      // 原文 stem 直传（#32-6 单点归一）：sanitize 在 import_source 内部
+      // 单点发生（不动点化后幂等）——cmd 侧预清洗是历史双口径残留
+      Some(s) => s
       None => {
         print_out("\{disp} → REJECT (no usable stem)")
         n_reject = n_reject + 1

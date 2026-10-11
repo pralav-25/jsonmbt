@@ -113,7 +113,11 @@ pub fn Diag::render(self : Diag) -> String {
   if self is Diag(code~, loc~, message~, help~, path~) {
     let (line, col) = pos_of(loc)
     let fname = if loc.start.fname != "" { loc.start.fname } else { path }
-    let head = "jsonmbt: error [\{code.num()}] \{fname}:\{line}:\{col} \{message}"
+    // 前缀按 rc 分化（#32-20）：hint 级码（rc=0）不是 error——曾硬编码
+    // "error"，wasm/js 直连消费者（不走 CLI print_hint 兜底）拿到
+    // "jsonmbt: error [J4031]" 的 rc-0 提示
+    let tag = if code.exit_code() == 0 { "hint" } else { "error" }
+    let head = "jsonmbt: \{tag} [\{code.num()}] \{fname}:\{line}:\{col} \{message}"
     match help {
       Some(h) => head + "\n  help: " + h
       None => head

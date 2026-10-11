@@ -68,11 +68,6 @@ priv enum NumParse {
 /// 整数全过 Int64 累加器——溢出即 Overflow（D-2 超 Int64 诚实拒绝的判据）
 fn numeric_text(raw : String) -> NumParse {
   let s = raw.replace(old="_", new="")
-  // Int64 下界 -2^63 是唯一超出「正数累积界 2^63-1」的可表示值（审 P3 误拒）；
-  // 累加器走 UInt 不可行——前置特判（十进制唯一文本，确定性无损）
-  if s == "-9223372036854775808" {
-    return Ok(s, -9223372036854775808L)
-  }
   if s == "" {
     return Illegal
   }
@@ -99,24 +94,38 @@ fn numeric_text(raw : String) -> NumParse {
     (body.contains(".") || body.contains("e") || body.contains("E")) {
     return Ok(s, 0L)
   }
-  // 整数：Int64 累加（溢出检测），十进制输出
-  let mut acc : Int64 = 0L
-  // 正负两侧同用 2^63-1 界：-2^63 这个单点值按 Overflow 处理（诚实拒绝，登记在 D-11 已知面）
-  let limit : Int64 = 9223372036854775807L
+  // 整数：UInt64 累加（溢出检测），十进制输出。界按符号分侧：正数
+  // 2^63-1；负数放宽到 2^63（-2^63 是唯一「超出正界却可表示」的单点，
+  // #32-20：hex/0o/0b 形态曾因只特判十进制而误拒——进制无关的界内放行）
+  let mut acc : UInt64 = 0UL
+  let bound : UInt64 = if neg {
+    9223372036854775808UL
+  } else {
+    9223372036854775807UL
+  }
   for ch in body {
     let d = digit_value(ch)
     match d {
       Some(k) => {
-        // acc*base + k <= limit  ⇔  acc <= (limit-k)/base（base>0 整除安全侧再复核）
-        if acc > (limit - k.to_int64()) / base.to_int64() {
+        // acc*base + k <= bound  ⇔  acc <= (bound-k)/base（整除安全侧）
+        if acc > (bound - k.to_uint64()) / base.to_uint64() {
           return Overflow(s)
         }
-        acc = acc * base.to_int64() + k.to_int64()
+        acc = acc * base.to_uint64() + k.to_uint64()
       }
       None => return Illegal
     }
   }
-  let v = if neg { -acc } else { acc }
+  if acc == 9223372036854775808UL {
+    // 仅 neg 可达（正侧 bound 较紧）；恒为 min 单点
+    return Ok("-9223372036854775808", -9223372036854775808L)
+  }
+  // acc ≤ 2^63-1（2^63 单点已上返）→ reinterpret 无损
+  let v = if neg {
+    -(acc.reinterpret_as_int64())
+  } else {
+    acc.reinterpret_as_int64()
+  }
   Ok("\{v}", v)
 }
 

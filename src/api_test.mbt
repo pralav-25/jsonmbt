@@ -256,3 +256,29 @@ test "#27 : Map 键往返反转义——解码值语义（曾静默双层转义�
   let built = @src.build_source(out, path="m.json.mbt", expected_name="m")
   inspect(built, content=json)
 }
+
+///|
+test "#32-20 : hex 形态 Int64 下界可表示即收（-0x8000000000000000 曾误拒 J3004）" {
+  // 十进制下界 -9223372036854775808 已收（PLAN §9 修复实录）；hex 同值形态
+  // 曾走十进制特判残留误拒——值可表示 = 应产 Int64
+  let out = @src.import_source("{\"a\":-9223372036854775808}", path="t.json", stem="t").content
+  inspect(out.contains("Int64"), content="true")
+  let src_hex = "struct A {\n  a : Int64\n}\npub let t : A = A::{ a: -0x8000000000000000, }\n"
+  let built = @src.build_source(src_hex, path="t.json.mbt", expected_name="t")
+  inspect(built.contains("-9223372036854775808"), content="true")
+}
+
+///|
+test "#32-20 : Map 非 String 键类型头预检 J2007（曾落值层 J3004 层/码漂移）" {
+  let d = try {
+    let _ = @src.build_source(
+      "struct S {\n  m : Map[Int, String]\n}\npub let t : S = S::{ m: {} }\n",
+      path="t.json.mbt",
+      expected_name="t",
+    )
+    "BUILD-SUCCEEDED-BUT-DIAG-EXPECTED"
+  } catch {
+    e => if e is Diag(..) { e.render() } else { abort("non-Diag") }
+  }
+  inspect(d.contains("[J2007]"), content="true")
+}

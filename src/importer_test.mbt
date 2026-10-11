@@ -216,8 +216,36 @@ test "P1-1 防回归 : 指数源文本三形态生成合法字面量（1e2/1E6/-
 ///|
 test "P1-2 防回归 : 控制字符生成合法 U+XXXX 形态转义（三段写，无坏插值）" {
   let out = do_import("{\"s\":\"a\\u0001b\\u0000c\\u001fd\"}")
-  inspect(out.contains("a\\u{1}b\\u{0}c\\u{31}d"), content="true")
+  // 期望形态随 #32-2 勘误：写侧 = 小写 hex（曾锚死十进制 "31" 的错误形态）
+  inspect(out.contains("a\\u{1}b\\u{0}c\\u{1f}d"), content="true")
   let _ = @src.build_source(out, path="t.json.mbt", expected_name="t") // 回吃合法
+}
+
+///|
+test "#32-2 : 控制字符 \\u{...} 写 hex 读 hex——两位数码点往返值等价" {
+  // 写侧曾十进制（0x0B→"11"、0x1F→"31"）而读侧按 hex 累加：两侧语法
+  // 各自合法、值静默改变——形态锚抓不住，必须往返值锚（D-11 码点比较）
+  let j = "{\"s\":\"a\\u000Bb\\u001Fc\\u0010d\"}"
+  let src = do_import(j, stem="t")
+  inspect(src.contains("\\u{b}"), content="true")
+  inspect(src.contains("\\u{1f}"), content="true")
+  let built = @src.build_source(src, path="t.json.mbt", expected_name="t")
+  let n1 = @src.normalize_json_text(built)
+  let n2 = @src.normalize_json_text(j)
+  inspect(n1, content=n2)
+}
+
+///|
+test "#32-3 : 空键/\"_\" 键不 panic 不产非法字段（Map 逃生门 / __ 改名）" {
+  // 空键：单键对象曾 infer k[0] panic（rc=127 无 J 码）——现落 Map 逃生门
+  let out1 = do_import("{\"\": true}", stem="t")
+  // 精确断言（"Map[String]" 不是 "Map[String, Bool]" 的子串——写宽了假红）
+  inspect(out1.contains("Map[String, Bool]"), content="true")
+  // "_" 键：moon 字段位拒 _（通配符非标识符）——sanitize 产 __（曾直出 _
+  // 触发保险丝报 J0002 generator bug）
+  let out2 = do_import("{\"_\": 1}", stem="t")
+  inspect(out2.contains("__ : Int"), content="true")
+  let _ = @src.build_source(out2, path="t.json.mbt", expected_name="t") // 回吃合法
 }
 
 ///|
@@ -1234,4 +1262,142 @@ test "#28 : is_legal_label 对齐 moon 词法区间表（表外字母不误收�
   // ASCII 对照：数字开头键走既有 Map 逃生门（非 #28 变更面——回归确认）
   let d = do_import("{\"1abc\":1}")
   inspect(d.contains("Map[String,"), content="true")
+}
+
+///|
+test "#32-12 : 嵌套 Map 逃生门值异型报 J4011 点名键因（曾 J4012 错桶）" {
+  expect_import_diag(
+    "{\"a.b\": {\"x.y\": 1, \"z\": 2}, \"c.d\": {\"x.y\": \"s\", \"z\": \"t\"}}",
+    "J4011",
+  )
+}
+
+///|
+test "#32-6 : sanitize_stem 不动点——大写保留字 stem（Match/Type）全链可用" {
+  // 清洗（大写→小写）可产生新的保留字形态——输出须复查至不动点；
+  // 曾直接返回 "match" → 产物 pub let match 非法 → 保险丝 J0002 甩锅
+  inspect(@src.sanitize_stem("Match"), content="x_match")
+  inspect(@src.sanitize_stem("Type"), content="x_type")
+  inspect(@src.sanitize_stem("True"), content="x_true")
+  inspect(@src.sanitize_stem("_"), content="x__")
+  // 常规 stem 恒等 + 原文保留字（既有行为不回归）
+  inspect(@src.sanitize_stem("server"), content="server")
+  inspect(@src.sanitize_stem("type"), content="x_type")
+  let out = do_import("{\"a\":1}", stem="Match")
+  inspect(out.contains("pub let x_match"), content="true")
+  // D-7：Match.json.mbt 的期望名 = sanitize_stem("Match")——build/check 同口径
+  let _ = @src.build_source(out, path="Match.json.mbt", expected_name="x_match")
+}
+
+///|
+test "#32-7 : 未闭合块注释不消解（D-9「不收」）——jsonc 档同拒" {
+  expect_import_diag("{\"a\":1} /* unclosed", "J1002")
+  expect_import_diag("{\"a\":1} /*/", "J1002")
+  expect_import_diag("{\"a\":1, /* pending", "J1002")
+}
+
+///|
+test "#32-5 : fill 产物合法性——enum 超宽走变体块形 + fill 自带回吃保险丝" {
+  let existing =
+    #|enum E {
+    #|  A(Px)
+    #|  B(Int)
+    #|  C
+    #|}
+    #|struct Px {
+    #|  x : String
+    #|}
+    #|pub let t : E = C
+  let mut long = ""
+  for i = 0; i < 74; i = i + 1 {
+    long = long + "y"
+  }
+  let filled = @src.fill_source(
+    "{\"case\":\"A\",\"x\":\"\{long}\"}",
+    existing,
+    path="t.json",
+    stem="t",
+  )
+  // 变体消歧形态（曾落 Map 字面量——enum 位 Map = 非法产物）；
+  // 超宽走 Some( 同款折形：A( 换行、payload 块缩进 +2
+  inspect(filled.contains("A(\n  Px::{"), content="true")
+  inspect(filled.contains(": E = {"), content="false")
+  // 回吃合法（保险丝落地后 fill_source 内部先行回吃——此处双保险）
+  let _ = @src.build_source(filled, path="t.json.mbt", expected_name="t")
+}
+
+///|
+test "#32-5 : fill null 错位与标量 payload 多余键 fail loud（曾静默 None/吞键）" {
+  let existing_px =
+    #|struct Px {
+    #|  x : String
+    #|}
+    #|pub let t : Px = Px::{ x: "v" }
+  let d1 = try {
+    let _ = @src.fill_source("{\"x\":null}", existing_px, path="t.json", stem="t")
+    "FILLED-BUT-DIAG-EXPECTED"
+  } catch {
+    e => if e is @src.Diag(..) { e.render() } else { abort("non-Diag") }
+  }
+  // null 进非 Option 字段：String 位曾静默产 None（moon 类型错的产物落盘）
+  inspect(d1.contains("[J3004]"), content="true")
+  let existing_e =
+    #|enum E {
+    #|  B(Int)
+    #|}
+    #|pub let t : E = B(1)
+  let d2 = try {
+    let _ = @src.fill_source(
+      "{\"case\":\"B\",\"value\":1,\"extra\":9}",
+      existing_e,
+      path="t.json",
+      stem="t",
+    )
+    "FILLED-BUT-DIAG-EXPECTED"
+  } catch {
+    e => if e is @src.Diag(..) { e.render() } else { abort("non-Diag") }
+  }
+  // 标量 payload 多余键：曾静默吞 extra 产 B(1)——「静默忽略 = 吞错」同款
+  inspect(d2.contains("[J3004]"), content="true")
+}
+
+///|
+test "#32-4 : Some( 折形 = fmt 规范形（接值首行）——宽度常数不动点锚" {
+  // Option 元素超宽值：生成器曾产 Some(\n  折形（fmt 会改写 = 不动点破）；
+  // fmt 规范形 = Some( 与值首行同行（探针 tmp 实测）。null 数组元素聚 Option
+  let out = do_import(
+    "{\"o\":[null,{\"a\":1,\"b\":\"\{repeat_x(90)}\"}]}",
+    stem="t",
+  )
+  inspect(out.contains("Some(A::{"), content="true")
+  inspect(out.contains("Some(\n"), content="false")
+}
+
+///|
+fn repeat_x(n : Int) -> String {
+  let buf = StringBuilder()
+  for _ in 0..<n {
+    buf.write_char('x')
+  }
+  buf.to_string()
+}
+
+///|
+test "#32-15 : 键集判重与键序无关——同键集异序归单 struct（PLAN §6）" {
+  // 突变实证：去掉签名排序后 129 全绿 = 该主张零判别（异序样本会分裂两 struct）
+  let out = do_import(
+    "{\"a\":{\"x\":1,\"y\":2},\"b\":{\"y\":3,\"x\":4}}",
+    stem="t",
+  )
+  // a/b 为字段、值对象归同一派生 struct X（键集判重与键序无关）；
+  // 字段序 = 首见样本键序（x,y）
+  inspect(out.contains("struct X {\n  x : Int\n  y : Int\n}"), content="true")
+  inspect(out.contains("struct X2 {"), content="false")
+}
+
+///|
+test "#32-17 : 数字 malformed 进解析器内部才拒的形态——01/1./1e+" {
+  expect_import_diag("{\"a\":01}", "J1002")
+  expect_import_diag("{\"a\":1.}", "J1002")
+  expect_import_diag("{\"a\":1e+}", "J1002")
 }

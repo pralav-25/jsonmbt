@@ -77,7 +77,9 @@ fn collect_tyenv(impls : @list.List[@syntax.Impl]) -> TypeEnv raise Diag {
         match decl.components {
           Record(fields~, ..) => {
             let name = decl.tycon
-            if structs.contains(name) {
+            // 双向查重（#32-11）：struct 撞 enum 同为 J2006——Record 臂曾只查
+            // structs，enum 在前时漏报（同族双臂不对称，判定随声明顺序翻转）
+            if structs.contains(name) || enums.contains(name) {
               raise Diag(
                 code=JDupStruct,
                 loc=decl.loc,
