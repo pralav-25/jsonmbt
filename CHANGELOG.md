@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed（issue #18：import 产物收敛 moon fmt 不动点——生成器宽度驱动重写 + 层 2 金门）
+
+- **勘误定谳**：PLAN §9「全部形态 fmt-stable」旧结论证伪（疑踩陷阱 #45 静默假成功）——import 产物实非 fmt-stable（fmt 补 `///|`、短 record 收敛单行、数组折回）；codegen 头注释与 PLAN §9 双勘误成文
+- **生成器重写为宽度驱动 fmt 不动点**（按 #18 评论封盘的 13 形态探针 + 本轮金门迭代补探）：整行 ≤84 record 单行**尾逗号规范形**（`S::{ k: v, }`——嵌套递归内联；**宽度按 UTF-8 字节**，金门实证中文行 73 码点 87 字节被展开）；超宽每字段行；数组 ≤80 单行、标量超宽**填满式**（行宽 84，B1/synth 对账定界）、复合元素每元素一行（record 元素单行尾逗号形）；Map 单行**无尾逗号**、超宽每对一行；`Some(` 折；`#|` 随嵌套缩进（#26 语义兼容）；每顶层声明补 `///|`；空容器 `{}`
+- **层 2 金门 `fmt-fixed-point`**：probe/samples 全输入 + 3 合成宽样本（#|/宽 record/25 元素数组）→ 影子 moon 项目跑真 fmt → 逐字节零 diff 常驻断言——**moon 升级 fmt 形态漂移即金门红**（漂移显性化）；修复前红（首张 empty_containers 即抓）；import 拒绝的输入（形态拒绝）跳过不计
+- **`--fmt` 退化 no-op**（spawn moon fmt 路径删除——旧「moon 缺席 rc=4 半成功态」契约随之作废；旗标保留零破坏 + hint）；旧「run moon fmt」hint 撤销（import 静默）
+- **锚随迁**：层 1 快照/保留字/type-name-map/fill×2 重录新形态（120/120）；层 2 cli-hints（import 静默）/fmt-fail（no-op 契约）/fill×3 随迁（35/35 含金门）
+- 门禁：层 1 **120/120**、层 2 **35/35**（双 exe）
+
 ### Fixed（issue #31：保留字 stem 断链——D-7 期望名全链统一走 sanitize_stem）
 
 - **现象**：`type.json`/`in.json`/`match.json` 等保留字文件名——import 按 `sanitize_stem` 产 `x_type` 绑定（rc=0 合法产物），CLI build/check 用 **stem 原文**做 D-7 校验 → J2003「import 成功、build 即红」；doctor 同病误诊（让人去改名而非暴露口径不一致）

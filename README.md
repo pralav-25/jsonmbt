@@ -38,7 +38,7 @@ $ jsonmbt build examples/server.json.mbt
 {"port":8080,"host":"localhost","tags":["a","b"],"retries":null}
 ```
 
-- **类型即 schema，零新语法**：`.json.mbt` 是合法 MoonBit 源文件——`moon check` 编译期验证字段类型与必填性，错误信息 IDE 级（行列指向）；重复键结构性不可能；注释与尾逗号天然合法。`moon fmt` 直接统一格式。
+- **类型即 schema，零新语法**：`.json.mbt` 是合法 MoonBit 源文件——`moon check` 编译期验证字段类型与必填性，错误信息 IDE 级（行列指向）；重复键结构性不可能；注释与尾逗号天然合法。`moon fmt` 直接统一格式（import 产物即 fmt 不动点——[#18](https://github.com/rustin-beep/jsonmbt/issues/18)：宽度驱动渲染对齐 fmt 规范形，层 2 金门常驻断言「产物过 fmt 零 diff」）。
 - **确定性降级**：同一输入永远得到逐字节相同的输出。build 校验先行，失败零产物。**字节口径**（[#30](https://github.com/rustin-beep/jsonmbt/issues/30)）：`--pretty` 的语义锚是 **Go `json.Encoder`**（数组恒逐元素展开，含单元素）——BYTE-EQ 只承诺「机器生成且格式策略一致」的源，人写/prettier 源承诺**值层面等价**（`migrate` 的 LAYOUT-EQ/VALUE-EQ 档）；「逐字节还原人写源」架构上不可达（`.json.mbt` 是类型化重写非保格式载体，布局信息 import 时已丢）。
 - **Map 键序契约**（[#19](https://github.com/rustin-beep/jsonmbt/issues/19)）：build 的 Map 输出键序 = `.json.mbt` 字面量的**源文本序**（不排序、非字典序——D-11 ④）。程序生成侧必须以确定性序渲染（原文序/排序序皆可），**禁止依赖运行时 map 遍历序**（Go/Py 的 range 序随机——同数据两次生成产物不同，确定性破功）。
 - **数字降级契约**（[#17](https://github.com/rustin-beep/jsonmbt/issues/17)）：整数族（`Int`/`Int64`）走**解析值归一**——`-0` → `0`、`0x10` → `16`（进制归一）、Int64 全精度文本保留；`Double` 保**源拼写透传**（`1.50` 原样、不归一为 `1.5`——避免解析-再格式化的精度伪影）。含义：数字拼写属源文本的一部分——按字节指纹锚定的下游请保持拼写稳定（机器生成源天然满足）。

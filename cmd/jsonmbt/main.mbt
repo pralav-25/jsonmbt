@@ -343,14 +343,9 @@ fn run_import(
     }
     return 0
   }
-  // #6-2：import 产物不是 moon fmt 的稳定形态（fmt 会补 ///| 与折行）
-  // 接入 moon 静态门禁前须 moon fmt 归一——假绿源（Vitro 批②实锤）
-  // stdout 通道（#12）无盘面目标，提示里的命令形态无意义 → 静默
-  if not(dash_out) {
-    write_stderr(
-      "jsonmbt: hint: run `moon fmt \{target}` before wiring moon checks — import output is not fmt-stable yet",
-    )
-  }
+  // #18：import 产物已是 fmt 不动点（宽度驱动渲染 + ///| + 尾逗号规范形
+  // ——层 2 金门 fmt-fixed-point 常驻断言），接 moon 门禁无需再 fmt——
+  // 旧 hint（"not fmt-stable yet"）作废撤销
   if dash_out {
     write_product_stdout(outcome.content)
     return 0
@@ -359,25 +354,12 @@ fn run_import(
     e => if e is @src.Diag(..) { return print_diag_exit(e) } else { return 4 }
   }
   if fmt {
-    // #10：产物 fmt 归一（spawn moon fmt 单文件）——机器写回域 freeze 循环
-    // 一步到位（紧凑产物 670 行 vs fmt 形态 3779 行的循环级 diff 问题）。
-    // 版本锁定声明：fmt 形态随 moon 工具链版本——升级 moon 后循环产物可能
-    // 整体重排一次（一次性 diff，属预期，见 #10 边界）
-    let cmd = "moon fmt \"\{target}\""
-    let bytes = @unicode.to_utf8_bytes(cmd)
-    let rc = jsonmbt_run_cmd(bytes, bytes.length())
-    if rc != 0 {
-      // #12：成因区分 = 多因列举 + 引导看透传报错，不按 rc 值语义分支
-      // （cmd 的 errorlevel 编码非契约；moon 的原始报错——如
-      // "not in a Moon project"——经 system() 直通 stderr，用户可见）
-      return jdiag_exit(
-        @src.JIO,
-        "moon fmt failed (rc=\{rc}) on '\{target}' — moon missing from PATH, or the file is outside any moon workspace (see moon's own error above)",
-        help=Some(
-          "--fmt failure keeps the unformatted product on disk; gate on rc (4 here), not on the product file",
-        ),
-      )
-    }
+    // #18：--fmt 退化为 no-op 保险（产物即不动点，无需 spawn moon fmt；
+    // 保留旗标 = 既有脚本零破坏）。moon 升级致 fmt 形态漂移时金门会红，
+    // 此处不再吞掉差异——漂移显性化后由本仓跟进渲染器
+    write_stderr(
+      "jsonmbt: hint: --fmt is a no-op — import output is already at the moon fmt fixed point (#18)",
+    )
   }
   0
 }

@@ -1,7 +1,10 @@
 // .json.mbt 生成器（importer 出口）：InferResult + 值树 → 源文件全文
-// 格式 = moon fmt canonical（全部形态 fmt-stable 实测锚定，PLAN §9）：
-//   struct 头字段每行 / 顶层 record 多行 / 嵌套 record 与数组元素内联单行 /
-//   长行不折（fmt 不折 >84 宽的单行值体）
+// 格式 = moon fmt 不动点（#18，2026-10-10 重写——#18 前旧证伪结论已勘误）：
+//   宽度驱动渲染——整行 ≤84 record 单行（尾逗号规范形）/ 超宽每字段行 /
+//   数组 ≤80 单行、标量超宽填满式 / Map 每对一行 / Some( 折 / #| 随嵌套
+//   缩进 / 每顶层声明补 ///|。层 2 金门（fmt-fixed-point）对 probe/samples
+//   全样本 + 合成宽样本常驻断言「产物过 moon fmt 零 diff」——moon 升级
+//   fmt 形态漂移即金门红（漂移显性化）
 // 头部 @generated 标注（纪律 11，Vitro 形态）：不写时间/版本——确定性硬锚
 // （同输入两次 import 逐字节一致）的前提
 
@@ -290,21 +293,9 @@ fn render_value(
       for e in elems {
         parts.push(render_value(table, atab, e, elem_ty, enums~, strict_keys~))
       }
-      // #9 排版：≥2 元素逐元素折行（catalog 77 卡曾单行 13354 字符——一行
-      // 改动整行 diff 换；折行后单卡行级 diff）；0/1 元素保持内联
-      if parts.length() >= 2 {
-        let buf = StringBuilder()
-        buf.write_string("[\n")
-        for p in parts {
-          buf.write_string("  ")
-          buf.write_string(p)
-          buf.write_string(",\n")
-        }
-        buf.write_string("]")
-        buf.to_string()
-      } else {
-        "[\{parts.join(", ")}]"
-      }
+      // #18 fmt 不动点：数组恒内联单行（`[a, b]`）；超宽由 block 路径
+      // 分流（标量填满式/复合每元素行）——#9 的逐元素折行非 fmt 形态已撤
+      "[\{parts.join(", ")}]"
     }
     (Object(o), Some(JTEnum(n))) if strict_keys =>
       // fill：键集漂移消歧（#14-2b）——按 tag 键（降级产物形态）或键集
@@ -325,7 +316,11 @@ fn render_value(
           "\{label}: \{render_value(table, atab, v, struct_field_type(table, name, label), enums~, strict_keys~)}",
         )
       }
-      "\{name}::{ \{entries.join(", ")} }"
+      (if entries.length() == 0 {
+        "\{name}::{}"
+      } else {
+        "\{name}::{ \{entries.join(", ")}, }"
+      })
     }
     (Object(o), t) => {
       // Map 逃生门形态（推断产物的对象位只剩 Map 上下文）
@@ -342,7 +337,12 @@ fn render_value(
           "\{moonbit_escape(k)}: \{render_value(table, atab, v, vt, enums~, strict_keys~)}",
         )
       }
-      "{ \{entries.join(", ")} }"
+      (if entries.length() == 0 {
+        "{}"
+      } else {
+        // Map 单行无尾逗号（金门实证——与 record 单行的尾逗号形不同族）
+        "{ \{entries.join(", ")} }"
+      })
     }
   }
 }
@@ -483,8 +483,266 @@ fn strip_option_shallow(t : JType) -> JType {
 }
 
 ///|
-/// 顶层值：struct record 多行（可读性）；其余形态内联。
-/// enums/strict_keys（#14-2b fill）透传——顶层 record 的键集校验同 strict 语义
+/// 排版常数（#18 fmt 不动点——2026-10-10 探针实测，层 2 金门校准）
+const FMT_LINE_WIDTH = 84 // record 整行单行界（宽扫 76-91 二分 + p5/p9/C）
+
+///|
+const FMT_SEQ_WIDTH = 80 // 数组/map 单行界（宽扫实测——与 record 界不同）
+
+///|
+const FMT_FILL_WIDTH = 84 // 标量数组填满式行宽（金门对账：synth 10 元素 81 收/89 断、B1 83 收/91 断——界 ∈[83,88] 取与行界统一的 84）
+
+///|
+/// 值内是否含 #| 多行形态（天然不可内联——值含真换行）
+fn has_multiline(j : Json) -> Bool {
+  match j {
+    String(s) => s.contains("\n") && !s.contains("\r")
+    Array(elems) => {
+      let mut hit = false
+      for e in elems {
+        if has_multiline(e) {
+          hit = true
+          break
+        }
+      }
+      hit
+    }
+    Object(o) => {
+      let mut hit = false
+      o.each(fn(_, v) { if has_multiline(v) { hit = true } })
+      hit
+    }
+    _ => false
+  }
+}
+
+///|
+/// 行宽（UTF-8 字节数——金门实证：fmt 的宽度判定按字节，中文值 73 码点
+/// 87 字节的行被展开而同宽 ASCII 行不展）
+fn line_width(s : String) -> Int {
+  let mut n = 0
+  for c in s {
+    let cp = c.to_int()
+    let w = if cp <= 0x7F {
+      1
+    } else if cp <= 0x7FF {
+      2
+    } else if cp <= 0xFFFF {
+      3
+    } else {
+      4
+    }
+    n = n + w
+  }
+  n
+}
+
+///|
+/// 缩进串
+fn ind(n : Int) -> String {
+  let buf = StringBuilder()
+  for _ in 0..<n {
+    buf.write_char(' ')
+  }
+  buf.to_string()
+}
+
+///|
+/// block 多行渲染（超宽/多行路径）：完整值块（行已含缩进）。形态语义与
+/// render_value 同源（键集校验/enum 消歧透传），仅排版分块
+fn render_block(
+  table : StructTable,
+  atab : AliasTable,
+  j : Json,
+  ty : JType?,
+  indent : Int,
+  enums? : Map[String, EnumDef] = Map([]),
+  strict_keys? : Bool = false,
+) -> String raise Diag {
+  match (j, ty) {
+    (v, Some(JTOption(t))) =>
+      // Some( 折（规则 6）：值块缩进 +2、闭 ) 回 indent
+      "Some(\n\{ind(indent + 2)}\{render_block(table, atab, v, Some(t), indent + 2, enums~, strict_keys~)}\n\{ind(indent)})"
+    (Array(elems), t) => {
+      let elem_ty : JType? = match t {
+        Some(JTArray(et)) => Some(et)
+        _ => None
+      }
+      // 元素分类：含复合（对象/数组/#|）→ 每元素一行（p7/A 探针——标量
+      // 数组的「每元素行」会被 fmt 填满化，非稳定形态）；纯标量 → 填满式
+      let has_compound = {
+        let mut hit = false
+        for e in elems {
+          match e {
+            Number(_) | True | False | Null => ()
+            String(s) => if s.contains("\n") && !s.contains("\r") {
+              hit = true
+            }
+            _ => hit = true
+          }
+        }
+        hit
+      }
+      let buf = StringBuilder()
+      buf.write_string("[\n")
+      if has_compound {
+        for e in elems {
+          // 复合元素优先单行尾逗号形（fmt 实测：元素位 record 不展开，
+          // 行宽 ≤84 即单行）；超宽/#| 才递归 block 展开
+          let inline_e = render_value(table, atab, e, elem_ty, enums~, strict_keys~)
+          let one = ind(indent + 2) + inline_e + ","
+          buf.write_string(ind(indent + 2))
+          if !has_multiline(e) && line_width(one) <= FMT_LINE_WIDTH {
+            buf.write_string(inline_e)
+          } else {
+            buf.write_string(
+              render_block(table, atab, e, elem_ty, indent + 2, enums~, strict_keys~),
+            )
+          }
+          buf.write_string(",\n")
+        }
+      } else {
+        let parts : Array[String] = []
+        for e in elems {
+          parts.push(render_value(table, atab, e, elem_ty, enums~, strict_keys~))
+        }
+        // 填满式：行首起逐元素 append，整行超 FMT_FILL_WIDTH 断行
+        let mut cur = ind(indent + 2)
+        let mut first = true
+        for p in parts {
+          let cand = if first {
+            cur + p + ","
+          } else {
+            cur + " " + p + ","
+          }
+          if !first && line_width(cand) > FMT_FILL_WIDTH {
+            buf.write_string(cur)
+            buf.write_string("\n")
+            cur = ind(indent + 2) + p + ","
+          } else {
+            cur = cand
+          }
+          first = false
+        }
+        buf.write_string(cur)
+        buf.write_string("\n")
+      }
+      buf.write_string(ind(indent))
+      buf.write_string("]")
+      buf.to_string()
+    }
+    (Object(o), Some(JTStruct(name))) => {
+      let ks : Array[String] = []
+      o.each(fn(k, _) { ks.push(k) })
+      if strict_keys {
+        strict_check_keys(table, atab, name, ks)
+      }
+      let buf = StringBuilder()
+      buf.write_string("\{name}::{\n")
+      for k in ks {
+        let v = o.get(k).unwrap()
+        let label = alias_field_label(atab, name, k)
+        buf.write_string(
+          field_block_line(
+            table,
+            atab,
+            label,
+            v,
+            struct_field_type(table, name, label),
+            indent + 2,
+            enums,
+            strict_keys,
+          ),
+        )
+      }
+      buf.write_string(ind(indent))
+      buf.write_string("}")
+      buf.to_string()
+    }
+    (Object(o), t) => {
+      // Map 超宽：每对一行（规则 5，无填满式）
+      let vt : JType? = match t {
+        Some(JTMap(_, v)) => Some(v)
+        _ => None
+      }
+      let ks : Array[String] = []
+      o.each(fn(k, _) { ks.push(k) })
+      let buf = StringBuilder()
+      buf.write_string("{\n")
+      for k in ks {
+        let v = o.get(k).unwrap()
+        buf.write_string(
+          field_block_line(
+            table,
+            atab,
+            moonbit_escape(k),
+            v,
+            vt,
+            indent + 2,
+            enums,
+            strict_keys,
+          ),
+        )
+      }
+      buf.write_string(ind(indent))
+      buf.write_string("}")
+      buf.to_string()
+    }
+    _ => render_value(table, atab, j, ty, enums~, strict_keys~)
+  }
+}
+
+///|
+/// 字段行渲染（block 路径）：短值内联（字段行宽 ≤84 且非多行）；超宽或
+/// #| 多行按类型分块（k: [ 填满 / k: { 每对 / k: Some( 折 / k: ( 的 #| 块
+/// ——E2 实测 #| 随嵌套缩进）。返回完整行（含缩进与行尾 ,\n）
+fn field_block_line(
+  table : StructTable,
+  atab : AliasTable,
+  label : String,
+  v : Json,
+  vt : JType?,
+  indent : Int,
+  enums : Map[String, EnumDef],
+  strict_keys : Bool,
+) -> String raise Diag {
+  if v is String(s) && s.contains("\n") && !s.contains("\r") {
+    let buf = StringBuilder()
+    buf.write_string(ind(indent))
+    buf.write_string("\{label}: (\n")
+    for line in s.split("\n") {
+      buf.write_string(ind(indent + 2))
+      buf.write_string("#|")
+      buf.write_string(line.to_owned())
+      buf.write_string("\n")
+    }
+    buf.write_string(ind(indent))
+    buf.write_string("),\n")
+    return buf.to_string()
+  }
+  let inline = render_value(table, atab, v, vt, enums~, strict_keys~)
+  let inline_line = "\{ind(indent)}\{label}: \{inline},"
+  // 数组/Map 的单行判定 = 值形态宽 ≤ FMT_SEQ_WIDTH（规则 4/5——不含行
+  // 前缀）；其余（record/标量/Some）用整行 ≤ FMT_LINE_WIDTH
+  let seq_like = (v is Array(_)) ||
+    (v is Object(_) && !(vt is Some(JTStruct(_))))
+  let fits = if seq_like {
+    line_width(inline) <= FMT_SEQ_WIDTH
+  } else {
+    line_width(inline_line) <= FMT_LINE_WIDTH
+  }
+  if !has_multiline(v) && fits {
+    return "\{inline_line}\n"
+  }
+  // 块基准 = 字段缩进（fmt 实测：rules: [ 的元素缩进 4 = 字段 2 + 2，
+  // 闭 ], 回字段 2——render_block 内部 +2 自洽）
+  let block = render_block(table, atab, v, vt, indent, enums~, strict_keys~)
+  "\{ind(indent)}\{label}: \{block},\n"
+}
+
+///|
+/// 顶层值（#18）：整行内联 ≤84 且无 #| → 单行（fmt 收敛终态）；否则
+/// block 多行。enums/strict_keys（#14-2b fill）透传——键集校验同 strict
 fn render_top_value(
   table : StructTable,
   atab : AliasTable,
@@ -492,35 +750,15 @@ fn render_top_value(
   ty : JType?,
   enums? : Map[String, EnumDef] = Map([]),
   strict_keys? : Bool = false,
+  prefix~ : String = "",
 ) -> String raise Diag {
-  match (j, ty) {
-    (Object(o), Some(JTStruct(name))) => {
-      let entries : Array[String] = []
-      let ks : Array[String] = []
-      o.each(fn(k, _) { ks.push(k) })
-      if strict_keys {
-        strict_check_keys(table, atab, name, ks)
-      }
-      for k in ks {
-        let v = o.get(k).unwrap()
-        let label = alias_field_label(atab, name, k)
-        entries.push(
-          "\{label}: \{render_value(table, atab, v, struct_field_type(table, name, label), enums~, strict_keys~)}",
-        )
-      }
-      let buf = StringBuilder()
-      buf.write_string(name)
-      buf.write_string("::{\n")
-      for e in entries {
-        buf.write_string("  ")
-        buf.write_string(e)
-        buf.write_string(",\n")
-      }
-      buf.write_string("}")
-      buf.to_string()
-    }
-    _ => render_value(table, atab, j, ty, enums~, strict_keys~)
+  // 判定含行前缀（pub let x : T = ）——D 实锤：fmt 收敛界是整行宽
+  let inline = render_value(table, atab, j, ty, enums~, strict_keys~)
+  let whole = prefix + inline
+  if !has_multiline(j) && line_width(whole) <= FMT_LINE_WIDTH {
+    return inline
   }
+  render_block(table, atab, j, ty, 0, enums~, strict_keys~)
 }
 
 ///|
@@ -545,24 +783,29 @@ fn generate_source(
     buf.write_string("// jsonmbt: field-alias \{sname}.\{label} = \"\{key}\"\n")
   }
   buf.write_string("\n")
-  // #14-2a：空容器 Never 底型定义（直接产 fmt 归一形态 `{}`——探针实锚
-  // `{ }` 会被 fmt 收敛，生成器出终态；零构造器 = 免费护栏）
+  // #18 fmt 不动点：每个顶层声明前补 ///| 文档标记（fmt 规则 1——不产
+  // 则 fmt 必改写），声明间空行分隔
   if result.uses_never {
-    buf.write_string("pub enum Never {}\n\n")
+    buf.write_string("///|\npub enum Never {}\n\n")
   }
   for s in result.structs {
+    buf.write_string("///|\n")
     buf.write_string(render_struct_def(s.0, s.1))
     buf.write_string("\n")
   }
   match result.root_ty {
     Some(t) => {
-      buf.write_string("pub let \{stem} : \{t.show()} = ")
-      buf.write_string(render_top_value(table, atab, root, Some(t)))
+      let pfx = "pub let \{stem} : \{t.show()} = "
+      buf.write_string("///|\n")
+      buf.write_string(pfx)
+      buf.write_string(render_top_value(table, atab, root, Some(t), prefix=pfx))
       buf.write_string("\n")
     }
     None => {
-      buf.write_string("pub let \{stem} = ")
-      buf.write_string(render_top_value(table, atab, root, None))
+      let pfx = "pub let \{stem} = "
+      buf.write_string("///|\n")
+      buf.write_string(pfx)
+      buf.write_string(render_top_value(table, atab, root, None, prefix=pfx))
       buf.write_string("\n")
     }
   }

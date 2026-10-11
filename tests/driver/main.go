@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -426,8 +427,9 @@ func caseCliHints(exe, dir string) error {
 	if err != nil || rc != 0 {
 		return fmt.Errorf("import rc=%d err=%v", rc, err)
 	}
-	if !strings.Contains(string(stderr0), "moon fmt") {
-		return fmt.Errorf("import 应提示 moon fmt，got %q", stderr0)
+	// #18：产物即 fmt 不动点——旧「run moon fmt」hint 撤销，import 静默
+	if len(stderr0) != 0 {
+		return fmt.Errorf("import 应静默（fmt 不动点后无 hint），got %q", stderr0)
 	}
 	rc, _, stderr1, err := runExe(exe, dir, "build", "h.json.mbt")
 	if err != nil || rc != 0 {
@@ -527,21 +529,22 @@ func caseOdashExclusive(exe, dir string) error {
 // moon 在场则 fmt 报 not-in-workspace（真·盲区），moon 缺席则 spawn 失败
 // ——两种成因都必须走同一 J0002 出口（断言成因不敏感）。
 func caseFmtFailJ0002(exe, dir string) error {
+	// #18 后 --fmt 退化为 no-op（import 产物即 moon fmt 不动点，不再
+	// spawn moon fmt——旧的「moon 缺席 rc=4 半成功态」契约随 #12 的
+	// spawn 路径删除而作废）。断言：rc=0、产物落盘、no-op hint 输出
 	writeFile(dir, "f.json", "{\"k\": 1}\n")
 	rc, _, stderr, err := runExe(exe, dir, "import", "f.json", "--fmt", "-o", "f.json.mbt")
 	if err != nil {
 		return err
 	}
-	if rc != 4 {
-		return fmt.Errorf("fmt 失败 rc = %d, want 4（rc 契约——#12 实测 4，正文误报 0）", rc)
+	if rc != 0 {
+		return fmt.Errorf("--fmt no-op 应 rc=0，实得 %d stderr=%q", rc, stderr)
 	}
-	for _, frag := range []string{"[J0002]", "outside any moon workspace", "help:"} {
-		if !bytes.Contains(stderr, []byte(frag)) {
-			return fmt.Errorf("stderr 应含 %q（多因文案/help 半成功态声明）, got %q", frag, stderr)
-		}
+	if !bytes.Contains(stderr, []byte("--fmt is a no-op")) {
+		return fmt.Errorf("应输出 no-op hint: %q", stderr)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "f.json.mbt")); err != nil {
-		return fmt.Errorf("fmt 失败后未 fmt 产物应保留（半成功态契约）: %v", err)
+		return fmt.Errorf("产物未落盘: %v", err)
 	}
 	return nil
 }
@@ -567,7 +570,7 @@ func caseReservedFieldRoundtrip(exe, dir string) error {
 	for _, want := range []string{
 		"// jsonmbt: field-alias Where.where_ = \"where\"",
 		"where_ : String",
-		"Where::{ where_: \"x\", b: [\"t\"] }",
+		"Where::{ where_: \"x\", b: [\"t\"], }",
 	} {
 		if !strings.Contains(string(prod), want) {
 			return fmt.Errorf("产物缺 %q:\n%s", want, prod)
@@ -718,6 +721,95 @@ func caseDoctorClean(exe, dir string) error {
 	return nil
 }
 
+// caseFmtFixedPoint：issue #18 金门——import 产物 = moon fmt 不动点。
+// 对 probe/samples 全部 .json/.jsonc 输入重 import，产物写进影子 moon
+// 项目跑真 fmt（doctor 影子同款基建），fmt 前后逐字节比。修复前 = 红
+//（fmt 补 ///|、短 record 收敛单行、数组折回）；moon 版本升级若漂移
+// fmt 形态，此门即红——漂移显性化是特性（PLAN §10 对偶面）。
+// moon 工具链缺席时跳过（打印 SKIP 标记——本机无 moon 不误伤，CI 恒跑）。
+func caseFmtFixedPoint(exe, dir string) error {
+	if _, err := exec.LookPath("moon"); err != nil {
+		fmt.Println("SKIP fmt-fixed-point（moon 缺席）")
+		return nil
+	}
+	// 输入集：probe/samples 全部 .json / .jsonc + 一张含换行长文案的合成
+	// 输入（#| 形态面——teaching 资产场景）
+	inputs := map[string]string{}
+	entries, err := os.ReadDir(filepath.Join("probe", "samples"))
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".jsonc") {
+			raw, err := os.ReadFile(filepath.Join("probe", "samples", name))
+			if err != nil {
+				return err
+			}
+			inputs[name] = string(raw)
+		}
+	}
+	inputs["synth_newline.json"] = "{\"items\":[\"one\\ntwo\\nthree\\nfour five six seven eight nine ten\",\"s\",1,2,3,true,null]}"
+	inputs["synth_wide.json"] = "{\"f1\":111111,\"f2\":222222,\"f3\":333333,\"f4\":444444,\"f5\":555555,\"f6\":666666,\"f7\":777777,\"f8\":888888,\"f9\":999999,\"f10\":1111110,\"f11\":1222221,\"f12\":1333332}"
+	inputs["synth_arr.json"] = "[" + strings.Repeat("\"elem\",", 24) + "\"last\"]"
+
+	// 影子 moon 项目（最小骨架——doctor fmt_shadow 实锚：name+version 即被接受）
+	shadow := filepath.Join(dir, "shadow")
+	os.MkdirAll(shadow, 0o755)
+	os.WriteFile(filepath.Join(shadow, "moon.mod"), []byte("name = \"p/fmtgate\"\nversion = \"0.1.0\"\n"), 0o644)
+	os.WriteFile(filepath.Join(shadow, "moon.pkg"), []byte("\n"), 0o644)
+
+	skipped := false
+	names := make([]string, 0, len(inputs))
+	for n := range inputs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	checked := 0
+	for _, name := range names {
+		stem := strings.TrimSuffix(strings.TrimSuffix(name, ".jsonc"), ".json")
+		src := inputs[name]
+		rc, _, _, err := runExeWithStdin(exe, dir, src, "import", "-", "-o",
+			filepath.Join(dir, stem+".json.mbt"))
+		if err != nil {
+			return fmt.Errorf("%s import err=%v", name, err)
+		}
+		if rc != 0 {
+			// 输入是降级 golden 时可能撞形态拒绝（如 null 列 J4003）——
+			// import 拒绝是正常判决不是金门标的，跳过
+			skipped = true
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, stem+".json.mbt"))
+		if err != nil {
+			return err
+		}
+		// 写影子项目 → 真 fmt → 读回逐字节比（行尾归一——fmt 产物 LF）
+		os.WriteFile(filepath.Join(shadow, stem+".json.mbt"), raw, 0o644)
+		cmd := exec.Command("moon", "fmt")
+		cmd.Dir = shadow
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%s 影子 fmt 失败: %v\n%s", name, err, out)
+		}
+		fmtd, err := os.ReadFile(filepath.Join(shadow, stem+".json.mbt"))
+		if err != nil {
+			return err
+		}
+		a, b := strings.ReplaceAll(string(raw), "\r\n", "\n"), strings.ReplaceAll(string(fmtd), "\r\n", "\n")
+		if a != b {
+			return fmt.Errorf("%s 产物非 fmt 不动点（#18）\n--import--\n%s\n--moon-fmt--\n%s", name, a, b)
+		}
+		checked++
+	}
+	if checked == 0 && !skipped {
+		return fmt.Errorf("金门空转（无输入）")
+	}
+	if skipped {
+		fmt.Println("note: fmt-fixed-point 有输入被 import 拒绝（形态拒绝）——已跳过")
+	}
+	return nil
+}
+
 func caseDoctorReadonly(exe, dir string) error {
 	// 验收 4：全程只读——跑前后目录快照（文件集 + 内容）逐字节不变
 	writeFile(dir, "w.json.mbt", doctorFile("W", "W", "w"))
@@ -762,7 +854,7 @@ func caseTypeNameMap(exe, dir string) error {
 	if !strings.Contains(s, "pub struct Entry") || strings.Contains(s, "pub struct Id") {
 		return fmt.Errorf("映射未生效：\n%s", s)
 	}
-	if !strings.Contains(s, `Entry::{ id: 1, file: "x" }`) {
+	if !strings.Contains(s, `Entry::{ id: 1, file: "x", }`) {
 		return fmt.Errorf("数据引用未随映射更新：\n%s", s)
 	}
 	// 往返
@@ -1047,7 +1139,7 @@ func caseFill(exe, dir string) error {
 	if !strings.Contains(s, "// hand-renamed header comment must survive") {
 		return fmt.Errorf("头部人工内容丢失:\n%s", s)
 	}
-	if !strings.Contains(s, "A(Ax::{ a: 1 }),") || !strings.Contains(s, "B(Bx::{ b: 2 }),") {
+	if !strings.Contains(s, "A(Ax::{ a: 1, }),") || !strings.Contains(s, "B(Bx::{ b: 2, })]") {
 		return fmt.Errorf("消歧值体缺失:\n%s", s)
 	}
 	// 同步 → check rc0
@@ -1065,7 +1157,7 @@ func caseFill(exe, dir string) error {
 	if err != nil || rc != 0 {
 		return fmt.Errorf("预览 rc=%d err=%v", rc, err)
 	}
-	if !strings.Contains(string(out), "B(Bx::{ b: 7 })") {
+	if !strings.Contains(string(out), "B(Bx::{ b: 7, })") {
 		return fmt.Errorf("tag 消歧预览缺失:\n%s", out)
 	}
 	// 互斥：--fill + --type-name-map → J0001
@@ -1281,6 +1373,7 @@ var cases = []testCase{
 	{"migrate-astral-bytes", caseMigrateAstralBytes},
 	{"migrate-dotdirs", caseMigrateDotDirs},
 	{"reserved-stem-chain", caseReservedStemChain},
+	{"fmt-fixed-point", caseFmtFixedPoint},
 	{"probe-samples-golden", caseProbeSamples},
 	{"build-stdout-deterministic", caseBuildDeterministic},
 	{"import-check-idempotent", caseImportCheckGate},
