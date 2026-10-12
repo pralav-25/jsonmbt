@@ -26,7 +26,7 @@ keywords = [
 description = "typed JSON source files for MoonBit (.json.mbt) — moon-checked, fmt-stable, degrade-to-JSON"
 
 import {
-  "moonbitlang/parser@0.4.3",
+  "moonbitlang/parser@0.4.4",
   "moonbitlang/lexer@0.4.2",
   "moonbitlang/x@0.5.5",
 }

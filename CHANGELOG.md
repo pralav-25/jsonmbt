@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Fixed（issue #33：moon 0.1.20261012 拒装传递依赖旧格式——parser 0.4.3→0.4.4 升级）
+
+- **现象**：moon 0.1.20261012（moonc v0.10.15）在安装/解析阶段拒绝 `.mooncakes` 内仍以 `moon.mod.json` 分发的传递依赖（`moon.mod.json ... is no longer supported. Run moon fmt to migrate to moon.mod`，rc=127）——依赖链 jsonmbt → moonbitlang/parser@0.4.3 → moonbit-community/prettyprinter@0.4.10；`moon update` 本身过、`moon fmt` 只迁本项目不触缓存，项目侧无法自救
+- **修法 = 上游跟进路径**：registry 实查 prettyprinter **0.4.11**（2026-10-11）已迁 `moon.mod` 新格式分发，parser **0.4.4**（2026-10-12）deps 与 0.4.3 **唯一差异**即 pp 0.4.10→0.4.11——`moon.mod` 一行 `parser@0.4.4`，lexer/x 不动，无需缓存缓解 hack
+- **红→绿**：同版 moon 本地复现断供（rc=127 同款报错）→ 升级后缓存确认 `moon.mod` 新格式；`MOON_CC=clang` native release 构建 rc=0（10 warnings 均本仓既有）；pages js 链路 SMOKE ALL OK
+- **门禁**：层 1 **137/137**；层 2 **39/40**——唯一红 `fmt-fixed-point` 为**姊妹漂移非本批引入**（新版 `moon fmt` 归一化类型位置 `Int`→`Int32`，探针实证 `UInt`→`UInt32` 同改写、`Int64/UInt64/Double/Bytes/Char` 不动），拆 **#34** 走 PLAN §8 评审（规范类型拼写 = 语言面决策，本批不夹带）
+- CI `setup-moonbit version: latest` 未 pin 维持（#34 附带决策点：latest + 金门 = 漂移雷达 fail loud）
+
 ### Fixed（issue #18：import 产物收敛 moon fmt 不动点——生成器宽度驱动重写 + 层 2 金门）
 
 - **勘误定谳**：PLAN §9「全部形态 fmt-stable」旧结论证伪（疑踩陷阱 #45 静默假成功）——import 产物实非 fmt-stable（fmt 补 `///|`、短 record 收敛单行、数组折回）；codegen 头注释与 PLAN §9 双勘误成文
