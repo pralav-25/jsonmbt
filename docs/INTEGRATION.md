@@ -9,7 +9,7 @@
 
 | 缺陷 | `.json` | `.json.mbt` |
 |---|---|---|
-| 字段类型写错（`Int` 字段填字符串） | 运行时才炸，或干脆不炸 | **编译期红** `[4014]` |
+| 字段类型写错（`Int32` 字段填字符串） | 运行时才炸，或干脆不炸 | **编译期红** `[4014]` |
 | 字段名拼错 | 静默忽略 | **编译期红** `[4044]` / `[4091]` |
 | 字段缺失 | 静默用零值 | **编译期红** `[4044]` |
 | 格式漂移 | 无感知 | `moon fmt` 归一 |
@@ -44,8 +44,8 @@ printf '\n' > data/moon.pkg      # 1 字节换行，即"空块"
 ### ② `struct` 必须 `pub`
 
 ```moonbit
-pub struct Config { port : Int }   # ✅
-struct Config { port : Int }       # ❌ priv → 逐字段 unused_field 噪音 + moon info 不透明
+pub struct Config { port : Int32 }   # ✅
+struct Config { port : Int }       # ❌ priv → 逐字段 unused_field 噪音 + moon info 不透明（Int 拼写此处无关——对照点是 pub/priv）
 ```
 
 `moon info` 对 priv struct 只给不透明的 `type X`——而 `moon info` 产出的接口面正是
@@ -147,7 +147,7 @@ moon fmt <member>   # ⚠️ 限定成员，见下方坑表
 光跑绿说明不了问题——**必须注入错误证明它会红**。两个要点：
 
 1. **哨兵先自证**：注入后先打印文件内容确认改动落地，再看 rc。
-2. **必须跨类型注入**：把 `String` 字段声明改成 `Int`（或反之）。**同类型改数值不会红，
+2. **必须跨类型注入**：把 `String` 字段声明改成 `Int32`（或反之）。**同类型改数值不会红，
    而且这是正确的**——moon 抓类型/字段，不抓业务语义。业务语义（如"分层号写错了"）
    得由下游自己的门禁抓，两者互补。
 

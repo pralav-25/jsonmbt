@@ -24,7 +24,10 @@ priv enum JType {
 ///|
 fn JType::show(self : JType) -> String {
   match self {
-    JTInt => "Int"
+    // #34：规范拼写 Int32——moon fmt（0.1.20261012+）归一化类型位置
+    // Int→Int32/UInt→UInt32，产出跟随否则 #18 fmt 不动点恒破；语义零变化
+    //（Int 系 Int32 别名，探针 moon check 双向赋值/泛型互传实证同型）
+    JTInt => "Int32"
     JTInt64 => "Int64"
     JTDouble => "Double"
     JTString => "String"
@@ -158,7 +161,8 @@ fn parse_type(t : @syntax.Type) -> JType {
       let id = longident_name(constr_id.id)
       let params = tys.to_array() // List 构造器不公开——数组化再判 arity
       match (id, params.length()) {
-        ("Int", 0) => JTInt
+        // #34：双拼写识别——规范形 Int32 + 存量手写 Int（同型别名，check 兼容不破）
+        ("Int", 0) | ("Int32", 0) => JTInt
         ("Int64", 0) => JTInt64
         ("Double", 0) => JTDouble
         ("String", 0) => JTString
@@ -169,6 +173,7 @@ fn parse_type(t : @syntax.Type) -> JType {
         | ("Byte", 0)
         | ("Char", 0)
         | ("UInt", 0)
+        | ("UInt32", 0) // fmt 归一拼写——不列则被 struct 分支误吞、诊断劣化
         | ("UInt64", 0)
         | ("Float", 0) => JTUnsupported(type_show_of(t)) // 有 MoonBit 定义但 JSON 无对应/非 L0 的内建
         (_, 0) => JTStruct(id) // 自定义 struct（无参裸名）；未定义名由 lookup_struct 报

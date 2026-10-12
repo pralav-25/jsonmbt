@@ -1,6 +1,6 @@
 ///|
 pub struct Inner {
-  x : Int
+  x : Int32
   ratio : Double
 }
 

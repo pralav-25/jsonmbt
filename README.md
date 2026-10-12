@@ -16,10 +16,10 @@ TS→JS 的关系，在 JSON 世界的复刻：类型留在源文件里持续生
 
 ```json.mbt
 struct Server {
-  port : Int
+  port : Int32
   host : String
   tags : Array[String]
-  retries : Int?
+  retries : Int32?
 }
 
 pub let server : Server = Server::{
@@ -43,7 +43,7 @@ $ jsonmbt build examples/server.json.mbt
 - **Map 键序契约**（[#19](https://github.com/rustin-beep/jsonmbt/issues/19)）：build 的 Map 输出键序 = `.json.mbt` 字面量的**源文本序**（不排序、非字典序——D-11 ④）。程序生成侧必须以确定性序渲染（原文序/排序序皆可），**禁止依赖运行时 map 遍历序**（Go/Py 的 range 序随机——同数据两次生成产物不同，确定性破功）。
 - **数字降级契约**（[#17](https://github.com/rustin-beep/jsonmbt/issues/17)）：整数族（`Int`/`Int64`）走**解析值归一**——`-0` → `0`、`0x10` → `16`（进制归一）、Int64 全精度文本保留；`Double` 保**源拼写透传**（`1.50` 原样、不归一为 `1.5`——避免解析-再格式化的精度伪影）。含义：数字拼写属源文本的一部分——按字节指纹锚定的下游请保持拼写稳定（机器生成源天然满足）。
 - **字符串转义契约**（[#16](https://github.com/rustin-beep/jsonmbt/issues/16)）：`.json.mbt` 侧接受 MoonBit 词法接受的一切（`\'  \"  \\  \/  \n  \r  \t  \b  \f  \0  \xHH  \u{...}  \uXXXX`，含 `\uD8xx\uDCxx` 代理对合成——moon 实测全接受）；降级输出用最小转义集（控制符/引号/反斜杠）+ **非 ASCII 裸 UTF-8**（无 `\uXXXX` 噪音）——同值异形输入产同一输出规范形。
-- **`Option` 即可空**：`Int?` ↔ JSON `null`，可空性写进类型头，读的人不用猜。
+- **`Option` 即可空**：`Int32?` ↔ JSON `null`，可空性写进类型头，读的人不用猜。
 - **工具链零维护税**：fmt / check / IDE 支持全部继承 moon 全家桶，jsonmbt 只做「校验 + 降级」这一件事。
 
 ## 快速开始
@@ -71,7 +71,7 @@ jsonmbt build - < in.json.mbt                      # stdin 进，stdout 出
 - 诊断走 stderr，稳定编号（J 系），一行定位 + 一行修复建议：
 
 ```
-jsonmbt: error [J3004] examples/server.json.mbt:9:9 expects Int, got String literal
+jsonmbt: error [J3004] examples/server.json.mbt:9:9 expects Int32, got String literal
   help: change the field type to String, or remove the quotes
 ```
 

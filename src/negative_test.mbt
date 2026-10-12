@@ -143,7 +143,7 @@ test "J3004 : 字段类型不匹配（PLAN §4 的原型例）" {
     #|  port: "443",
     #|}
   expect_diag(
-    src, "jsonmbt: error [J3004] t.json.mbt:6:9 expects Int, got String literal\n  help: change the field type to String, or remove the quotes",
+    src, "jsonmbt: error [J3004] t.json.mbt:6:9 expects Int32, got String literal\n  help: change the field type to String, or remove the quotes",
   )
 }
 
@@ -240,7 +240,7 @@ test "P2-6② : Some(v) 内层期望类型校验判别（Int? 字段给 Some(\"x
     #|  opt: Some("x"),
     #|}
   expect_diag(
-    src, "jsonmbt: error [J3004] t.json.mbt:6:13 expects Int, got String literal\n  help: change the field type to String, or remove the quotes",
+    src, "jsonmbt: error [J3004] t.json.mbt:6:13 expects Int32, got String literal\n  help: change the field type to String, or remove the quotes",
   )
 }
 

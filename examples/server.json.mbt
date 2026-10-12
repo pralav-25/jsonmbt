@@ -1,9 +1,9 @@
 ///|
 pub struct Server {
-  port : Int
+  port : Int32
   host : String
   tags : Array[String]
-  retries : Int?
+  retries : Int32?
 }
 
 ///|

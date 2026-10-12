@@ -99,7 +99,7 @@ test "manual : import 生成形态（多样本 null → Option + 键名逃生门
     path="config.json",
     stem="config",
   )
-  inspect(outcome.content.contains("v : Int?"), content="true") // 组内聚合 → Option[Int]
+  inspect(outcome.content.contains("v : Int32?"), content="true") // 组内聚合 → Option[Int32]
   inspect(outcome.content.contains("pub struct Config"), content="true")
   // 连字符键（x-tag）所在对象走 Map 逃生门——同值类型整体 Map[String, V]
   inspect(
@@ -137,7 +137,7 @@ test "manual : 诊断的机器可读形态" {
   }
   inspect(
     d,
-    content="jsonmbt: error [J3004] t.json.mbt:6:9 expects Int, got String literal\n  help: change the field type to String, or remove the quotes",
+    content="jsonmbt: error [J3004] t.json.mbt:6:9 expects Int32, got String literal\n  help: change the field type to String, or remove the quotes",
   )
 }
 ```
@@ -207,7 +207,7 @@ test "manual : 文件骨架与 stem 同名" {
 
 | 类型写法 | JSON 对应 | 备注 |
 |---|---|---|
-| `Int` / `Int64` / `Double` / `String` / `Bool` | number/number/number/string/boolean | `Int` 32 位（2³¹−1 实测界）；Int64 全精度文本保留 |
+| `Int32`（别名 `Int` 同型合法）/ `Int64` / `Double` / `String` / `Bool` | number/number/number/string/boolean | `Int32` 32 位（2³¹−1 实测界）；规范拼写 `Int32` 跟随 moon fmt 归一（#34/D-13——手写 `Int` 照常收，存量零破坏）；Int64 全精度文本保留 |
 | `T?`（**后缀糖**） | `null` ↔ 值 | **`Option[T]` 前缀形态 J2007 拒**；嵌套 `T??` 同拒（三态编码在 §8 评审） |
 | `Array[T]` | array | 同构元素 |
 | `Map[String, V]` | object（键序 = 书写序） | 键名逃生门（见下） |

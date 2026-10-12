@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed（issue #34 / D-13：moon fmt 归一化 Int→Int32——规范拼写跟随，存量零破坏）
+
+- **现象**：#33 处置后层 2 唯一红 = `fmt-fixed-point` 金门——moon 0.1.20261012（moonc v0.10.15）的 `moon fmt` 对类型位置做**别名归一化**（`Int`→`Int32`、`UInt`→`UInt32`；Int64/UInt64/Double/Bytes/Char 不动，探针实证），import 产物写 `Int` 则 #18 fmt 不动点恒破——金门按设计显性化（非 #33 升级引入）
+- **前置探针**：`Int` 系 `Int32` **同型别名**（跨注解双向赋值 + 泛型容器互传 `moon check` 全过）——拼写切换零语义变化
+- **修法（用户裁定方案 A，D-13 终案）**：① `JType::show` 产 `Int32`（import 产物/诊断文本统一规范形）；② `parse_type` **双拼写识别**（`Int` | `Int32` → JTInt）——手写 `Int` 合法、存量文件 check/build 双绿实证；③ `UInt32` 入 JTUnsupported（fmt 归一拼写——不列则被 struct 分支误吞、诊断劣化）；**CI `version: latest` 维持不 pin**（latest + 金门 = 漂移雷达 fail loud）
+- **锚**：层 1 红名单 9 锚手工随迁（negative_test ×2 / manual.mbt.md ×2 / importer_test 快照+查找串——**拒 `moon test -u` 粉饰**〔contains 锚查找串未随迁被刷成 `false` 废锚〕，含 `\n` 转义行走 Edit 工具避 heredoc 反斜杠折半坑）；期望样本随迁 5 处（examples/server + probe/samples/server,vitals——`port`/`x`/`retries` 注解）；**层 2 新锚 `legacy-int-spelling`**（Int/Int32 同文件混拼 check/build 双绿 + UInt32 → J2007 非 struct 误判）——J9 埋雷证红（临时回退双识别 → 18 红连带〔show 产 Int32 与 parse 只认 Int 的产出/解析不一致态〕）→ 恢复全绿
+- **文档**：README（示例/Option 行/诊断样例三处）/ skill 手写规则 1e（规范拼写条目）/ PLAN D-13 + §5 里程碑 + §9 探针存档（fmt 归一化 + 同型实证）
+- 门禁：层 1 **137/137**、层 2 **41/41**（金门复绿——红→绿闭环）
+
 ### Fixed（issue #33：moon 0.1.20261012 拒装传递依赖旧格式——parser 0.4.3→0.4.4 升级）
 
 - **现象**：moon 0.1.20261012（moonc v0.10.15）在安装/解析阶段拒绝 `.mooncakes` 内仍以 `moon.mod.json` 分发的传递依赖（`moon.mod.json ... is no longer supported. Run moon fmt to migrate to moon.mod`，rc=127）——依赖链 jsonmbt → moonbitlang/parser@0.4.3 → moonbit-community/prettyprinter@0.4.10；`moon update` 本身过、`moon fmt` 只迁本项目不触缓存，项目侧无法自救

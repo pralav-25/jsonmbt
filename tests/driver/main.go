@@ -944,6 +944,32 @@ func caseTypeNameMap(exe, dir string) error {
 	return nil
 }
 
+// caseLegacyIntSpelling（#34）：规范拼写切 Int32 后，存量手写 Int 文件零破坏。
+// moon fmt（0.1.20261012+）归一化类型位置 Int→Int32/UInt→UInt32，import 产物
+// 跟随产 Int32（#18 fmt 不动点）；parse_type 双拼写识别 = 存量兼容承诺的
+// 常驻锚——回退双识别（只认 Int）本锚即红（J9 埋雷验证过）。
+// UInt32（fmt 归一拼写）走 JTUnsupported → J2007，不被 struct 分支误吞。
+func caseLegacyIntSpelling(exe, dir string) error {
+	writeFile(dir, "legacy.json.mbt", "///|\nstruct Legacy {\n  port : Int\n  num : Int32\n}\n\n///|\npub let legacy : Legacy = Legacy::{\n  port: 443,\n  num: 7,\n}\n")
+	// 手写 Int 与规范 Int32 同文件混拼：check（语义 dry-run）+ build（降级）双绿
+	if rc, _, stderr, err := runExe(exe, dir, "check", "legacy.json.mbt"); err != nil || rc != 0 {
+		return fmt.Errorf("存量 Int 拼写 check 应 rc0: rc=%d err=%v\n%s", rc, err, stderr)
+	}
+	rc, out, _, err := runExe(exe, dir, "build", "legacy.json.mbt", "-o", "-")
+	if err != nil || rc != 0 {
+		return fmt.Errorf("存量 Int 拼写 build 应 rc0: rc=%d err=%v", rc, err)
+	}
+	if want := []byte(`{"port":443,"num":7}`); !bytes.Equal(bytes.TrimRight(out, "\r\n"), want) {
+		return fmt.Errorf("降级产物异常\n--want--\n%s\n--got--\n%s", want, out)
+	}
+	// UInt32 = fmt 归一拼写 → J2007（outside the L0 subset），不得被当未定义 struct
+	writeFile(dir, "u32.json.mbt", "///|\nstruct U32 {\n  n : UInt32\n}\n\n///|\npub let u32 : U32 = U32::{\n  n: 1,\n}\n")
+	if rc, _, stderr, _ := runExe(exe, dir, "check", "u32.json.mbt"); rc == 0 || !bytes.Contains(stderr, []byte("[J2007]")) {
+		return fmt.Errorf("UInt32 应 J2007 非 struct 误判: rc=%d stderr=%q", rc, stderr)
+	}
+	return nil
+}
+
 // #23：--type-name-map 命中后派生名须占位——同文件「异签名、同基名」的组，
 // 第 2 个组不得再算出同一个 derived、再命中同一条映射而假撞名。
 // 实测形态 = MoUI checks/linux.json（sourceBuild 与 rendererL2 基名均 Status）。
@@ -1450,6 +1476,7 @@ var cases = []testCase{
 	{"doctor-clean", caseDoctorClean},
 	{"doctor-readonly", caseDoctorReadonly},
 	{"type-name-map", caseTypeNameMap},
+	{"legacy-int-spelling", caseLegacyIntSpelling},
 	{"name-map-repeated-base", caseNameMapRepeatedBase},
 	{"cross-file-taken-dedup", caseCrossFileTakenDedup},
 	{"migrate-three-boards", caseMigrate},
