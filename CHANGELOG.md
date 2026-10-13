@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+### Fixed（issue #36：空容器底型名逐文件唯一 `<Stem>Never`——同包多文件不重复声明）
+
+- **现象**：codegen 逐文件发 `pub enum Never {}`（per-file `uses_never` 驱动）——整仓 JSON 迁入同一 moon 包时 **N 份重复声明** → moon `[4051]`。实测 `mizchi/actrun` 88 张 → 86 张 import 通过 → 同目录 `moon check` 红，**78/86 文件各声明一次**；脚本删掉 77 份重复（留 1）即 **全绿（0 error）** ⇒ 该重复是唯一拦路者。**旗舰场景**（整仓 JSON → 一个 moon 包）直接阻断，`docs/INTEGRATION.md` §0 只覆盖了 `pub struct` 无冲突
+- **前置探针**：MoonBit **无内建 `Never`**（`pub let x : Array[Never] = []` → *The type Never is undefined*）⇒ 底型必须自带声明，非可删项
+- **修法（用户裁定方案 b）**：底型名 = **`<Stem>Never`**（`never_type_name` = `sanitize_stem` + `capitalize`，非 A-Z 起头加 `T` 前缀保合法）——逐文件唯一（同目录 stem 唯一）⇒ 同包不再重复；**自持性保留**（不依赖 sibling 是否先 import，无 import 顺序依赖，`--check` 幂等不受 sibling 影响）；该名同时进 `used_type_names` 预留表（派生 struct 名不得占用）
+- **锚**：层 1 新锚「Never 底型逐文件唯一名」（两 stem 两名 + 自持 build 回吃）；#14-2a 主锚与全 null 锚随迁（`Array[TNever]` / `Map[String, TNever]` / `Array[TNever?]`）；层 2 `never-placeholder` 随迁并扩「同目录两文件底型名互异」断言；样本锚 `probe/samples/empty_containers.json.mbt` 与 `pkg.generated.mbti` 重生成（`sample-import-regen` 闸抓到过期——正是它存在的意义）
+- **pages 链**：`smoke.mjs` 空容器专断随迁（stem `demo` → `DemoNever`）——重生成 ffi.js 后 smoke **先红后绿**（`SMOKE ALL OK`）
+- **文档**：manual「空容器占位」/ skill 规则 1d / pages/index.html 演示卡 / 本 CHANGELOG
+- 门禁：层 1 **139/139**、层 2 **42/42**、`moon fmt --check src` 零内容差异
+
+### Fixed（issue #35：派生名不得占用 MoonBit 内建类型名——让位后保险丝不再误报 J0002）
+
+- **现象**：JSON 对象首键为**内建类型名小写**（`int`/`string`/`bool`/`double`/`unit`/`char`/`byte`/`float`/`int32`/`int64`…）时，派生名 `capitalize(key)` 撞 MoonBit 类型名 → 产物非法 → **保险丝 J0002**（`internal: import produced an invalid .json.mbt`）。两条通路：① `Int32`/`Int` 系遮蔽内建 → 字段解析成内建 → `[J3004] expects Int32, got record/object`；② `Char`/`Byte`/`Float`/`Unit` 被 jsonmbt **自己的** `parse_type` 判为非 L0 → `[J2007] field type is outside the L0 subset`
+- **实测触发**：`trkbt10/indexion` 的 `kgf-transpile/c.json`——首键 `int` 的「语言类型映射表」（真实高频形态）
+- **根因**：`used_type_names` 只播下 `["Never"]`，未预留内建名
+- **修法**：播种扩为 **`tyenv.parse_type` 识别为类型的名字 ∪ {Never}**（16 个：`Never Int Int32 Int64 Double String Bool Array Map Unit Byte Char UInt UInt32 UInt64 Float`）——派生名自动让位（`Int`→`Int2`）；映射值撞名判据随之收紧（把类型名当值用＝同样的遮蔽病）
+- **锚**：层 1 新锚「派生名让位内建类型名」（`int`/`char`/`string`/`bool`/`unit` 五例，修前 `Diag` 红）；层 2 新锚 `builtin-type-name-reserved`
+- **真数据验证**：修复后 MoonBit 生态 5 仓 270 张 **J0002 归零**，`indexion` 该张转 LAYOUT-EQ，通过率 84.07% → **84.44%**
+- 门禁：层 1 **139/139**、层 2 **42/42**
+
 ### Fixed（issue #34 / D-13：moon fmt 归一化 Int→Int32——规范拼写跟随，存量零破坏）
 
 - **现象**：#33 处置后层 2 唯一红 = `fmt-fixed-point` 金门——moon 0.1.20261012（moonc v0.10.15）的 `moon fmt` 对类型位置做**别名归一化**（`Int`→`Int32`、`UInt`→`UInt32`；Int64/UInt64/Double/Bytes/Char 不动，探针实证），import 产物写 `Int` 则 #18 fmt 不动点恒破——金门按设计显性化（非 #33 升级引入）

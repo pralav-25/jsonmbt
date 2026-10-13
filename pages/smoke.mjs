@@ -62,9 +62,10 @@ else {
   const rkBuilt = JSON.parse(js_build(rk.content));
   if (!(rkBuilt.ok && rkBuilt.json === '{"rules":[{"where":".btn","targets":["btn-primary"]}]}')) { bad++; console.log('reserved-key roundtrip FAIL:', JSON.stringify(rkBuilt).slice(0, 160)); }
 }
-// Never 占位专断（#14-2a：EAT[11]——空容器不再整张拒）
+// 空容器底型占位专断（#14-2a + #36：EAT[11]——空容器不再整张拒；
+// 底型名逐文件唯一 <Stem>Never，此处 stem="demo" → DemoNever）
 const nv = JSON.parse(js_import(EAT[11], 'demo'));
-const nvOk = nv.ok && nv.content.includes('pub enum Never {}') && nv.content.includes('Array[Never]') && nv.content.includes('Map[String, Never]');
+const nvOk = nv.ok && nv.content.includes('pub enum DemoNever {}') && nv.content.includes('Array[DemoNever]') && nv.content.includes('Map[String, DemoNever]');
 if (!nvOk) { bad++; console.log('never-placeholder FAIL:', JSON.stringify(nv).slice(0, 160)); }
 else {
   const nvBuilt = JSON.parse(js_build(nv.content));

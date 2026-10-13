@@ -863,7 +863,7 @@ fn generate_source(
   // #18 fmt 不动点：每个顶层声明前补 ///| 文档标记（fmt 规则 1——不产
   // 则 fmt 必改写），声明间空行分隔
   if result.uses_never {
-    buf.write_string("///|\npub enum Never {}\n\n")
+    buf.write_string("///|\npub enum \{result.never_name} {}\n\n")
   }
   for s in result.structs {
     buf.write_string("///|\n")

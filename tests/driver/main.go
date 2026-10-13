@@ -1032,6 +1032,32 @@ func caseCrossFileTakenDedup(exe, dir string) error {
 }
 
 
+// #35：派生 struct 名不得占用 MoonBit 内建类型名——否则产物被遮蔽、保险丝报 J0002。
+// 实测形态 = trkbt10/indexion kgf-transpile/c.json（首键 "int" → 派生 `Int`）。
+func caseBuiltinTypeName(exe, dir string) error {
+	writeFile(dir, "t.json", `{"a":{"int":"x"}}`)
+	rc, _, stderr, err := runExe(exe, dir, "import", "t.json", "-o", "t.json.mbt")
+	if err != nil || rc != 0 {
+		return fmt.Errorf("#35 内建名撞名：rc=%d stderr=%q", rc, stderr)
+	}
+	prod, _ := os.ReadFile(filepath.Join(dir, "t.json.mbt"))
+	s := string(prod)
+	if !strings.Contains(s, "pub struct Int2") || strings.Contains(s, "pub struct Int {") {
+		return fmt.Errorf("未让位内建名:\n%s", s)
+	}
+	if !strings.Contains(s, "a : Int2") {
+		return fmt.Errorf("字段类型未指向让位名:\n%s", s)
+	}
+	if rc, _, _, err := runExe(exe, dir, "build", "t.json.mbt"); err != nil || rc != 0 {
+		return fmt.Errorf("build rc=%d err=%v", rc, err)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "t.json"))
+	if strings.TrimRight(string(got), "\r\n") != `{"a":{"int":"x"}}` {
+		return fmt.Errorf("round-trip got=%s", string(got))
+	}
+	return nil
+}
+
 // migrate 子命令（#6-5）：批量迁移侦察三榜报告——byte-eq（可直进 CI 对账）/
 // value-eq（值等仅风格差，确认口径）/ reject（带 J 码原因）；默认零写
 // （--write 才落盘）；同目录撞名触发 stem 前缀化时告警指向 --type-name-map。
@@ -1162,8 +1188,9 @@ func caseMigrateTakenTwins(exe, dir string) error {
 }
 
 // never-placeholder（#14-2a）：空容器默认 Never 底型占位——J4001/J4002 不再
-// 整张拒（--strict 恢复旧拒）；产物含 enum Never 定义 + 往返字节等价；
+// 整张拒（--strict 恢复旧拒）；产物含底型 enum 定义 + 往返字节等价；
 // 冻结分支口径：孤空容器 REJECT 的 ~99% 场景直接可用。
+// #36：底型名逐文件唯一（<Stem>Never）——同目录两文件不重复声明（moon [4051]）。
 func caseNeverPlaceholder(exe, dir string) error {
 	writeFile(dir, "e.json", `{"exemptions": []}`)
 	rc, _, stderr, err := runExe(exe, dir, "import", "e.json", "-o", "e.json.mbt")
@@ -1171,7 +1198,7 @@ func caseNeverPlaceholder(exe, dir string) error {
 		return fmt.Errorf("import rc=%d err=%v stderr=%q", rc, err, stderr)
 	}
 	prod, _ := os.ReadFile(filepath.Join(dir, "e.json.mbt"))
-	for _, frag := range []string{"pub enum Never {}", "exemptions : Array[Never]", "exemptions: []"} {
+	for _, frag := range []string{"pub enum ENever {}", "exemptions : Array[ENever]", "exemptions: []"} {
 		if !strings.Contains(string(prod), frag) {
 			return fmt.Errorf("产物缺 %q:\n%s", frag, prod)
 		}
@@ -1191,14 +1218,18 @@ func caseNeverPlaceholder(exe, dir string) error {
 	if rc, _, stderr, _ := runExe(exe, dir, "import", "e.json", "--strict", "-o", "x.mbt"); rc != 1 || !bytes.Contains(stderr, []byte("[J4001]")) {
 		return fmt.Errorf("--strict 应 J4001 rc1: rc=%d stderr=%q", rc, stderr)
 	}
-	// 空对象同机制（Map[String, Never]）
+	// 空对象同机制（Map[String, <Stem>Never]）——stem o → ONever
 	writeFile(dir, "o.json", `{"cfg": {}}`)
 	if rc, _, _, err := runExe(exe, dir, "import", "o.json", "-o", "o.json.mbt"); err != nil || rc != 0 {
 		return fmt.Errorf("空对象 import rc=%d err=%v", rc, err)
 	}
 	o, _ := os.ReadFile(filepath.Join(dir, "o.json.mbt"))
-	if !strings.Contains(string(o), "Map[String, Never]") {
-		return fmt.Errorf("空对象应 Map[String,Never]:\n%s", o)
+	if !strings.Contains(string(o), "pub enum ONever {}") || !strings.Contains(string(o), "Map[String, ONever]") {
+		return fmt.Errorf("空对象应 <Stem>Never 形态:\n%s", o)
+	}
+	// #36：同目录两文件底型名互异 ⇒ 同包不重复声明（修前两份 `pub enum Never {}`）
+	if a := string(prod); !strings.Contains(a, "pub enum ENever {}") || !strings.Contains(string(o), "pub enum ONever {}") {
+		return fmt.Errorf("#36 底型名未逐文件唯一:\n--e--\n%s\n--o--\n%s", a, o)
 	}
 	return nil
 }
@@ -1479,6 +1510,7 @@ var cases = []testCase{
 	{"legacy-int-spelling", caseLegacyIntSpelling},
 	{"name-map-repeated-base", caseNameMapRepeatedBase},
 	{"cross-file-taken-dedup", caseCrossFileTakenDedup},
+	{"builtin-type-name-reserved", caseBuiltinTypeName},
 	{"migrate-three-boards", caseMigrate},
 	{"j2007-help-text", caseJ2007HelpText},
 	{"migrate-taken-twins", caseMigrateTakenTwins},

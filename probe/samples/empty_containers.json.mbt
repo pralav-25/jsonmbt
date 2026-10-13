@@ -2,13 +2,13 @@
 // 源：empty_containers.json
 
 ///|
-pub enum Never {}
+pub enum Empty_containersNever {}
 
 ///|
 pub struct Empty_containers {
   as_of : String
-  exemptions : Array[Never]
-  meta : Map[String, Never]
+  exemptions : Array[Empty_containersNever]
+  meta : Map[String, Empty_containersNever]
 }
 
 ///|

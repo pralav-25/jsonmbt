@@ -260,7 +260,7 @@ const EAT = [
   ['空数组两级启发', '孤立空数组本会拒；同文件他处同名非空字段给元素类型线索（D-1）', '{"list": [], "nested": {"list": [1, 2]}}'],
   ['emoji / 中文零转义', '降级输出 UTF-8 原样，无 \\uXXXX 噪音', '{"emoji": "🚀 中文"}'],
   ['保留字字段名（where）', 'MoonBit 保留字键自动改名 where_ 并发 field-alias 注记，build 按注记还原原键（往返无损）', '{"rules": [{"where": ".btn", "targets": ["btn-primary"]}]}'],
-  ['空容器 Never 占位', '推断无线索的空数组/空对象 → Array[Never] / Map[String, Never]（零构造器枚举 = 免费护栏：元素位写值编译期红）', '{"exemptions": [], "meta": {}}'],
+  ['空容器底型占位', '推断无线索的空数组/空对象 → Array[<Stem>Never] / Map[String, <Stem>Never]（零构造器枚举 = 免费护栏：元素位写值编译期红；底型名逐文件唯一，同包多文件不重复声明）', '{"exemptions": [], "meta": {}}'],
   ['转义宽集（moon 词法对齐）', 'JSON 侧 \\uXXXX / 代理对 / \\t 全族 import 无碍；降级输出最小转义 + 非 ASCII 裸 UTF-8（同值异形归一规范形）', '{"s": "a\\tb\\u4e2d\\ud83d\\ude80"}'],
 ];
 const REJECT = [

@@ -181,6 +181,7 @@ priv struct InferCtx {
   hint_keys : Array[String] // tagged-enum 提示去重（按键名）
   taken : Array[String] // 同目录已占类型名（跨文件去重——issue #4）
   stem : String
+  never_name : String // #36：本文件的 Never 底型名（<Stem>Never）
   fname : String
 }
 
@@ -191,7 +192,8 @@ priv struct InferResult {
   hints : Array[Diag]
   aliases : Array[(String, String, String)] // (struct 名, label, 原始键)——codegen 发射注记用
   map_hits : Array[String] // --type-name-map 命中键集（#6-4）
-  uses_never : Bool // #14-2a：空容器 Never 占位发生（产物含 enum Never 定义）
+  uses_never : Bool // #14-2a：空容器 Never 占位发生（产物含 enum <never_name> 定义）
+  never_name : String // #36：本文件 Never 底型名（逐文件唯一 <Stem>Never）
 }
 
 ///|
@@ -211,11 +213,18 @@ fn infer_shapes(
   type_name_map? : Map[String, String] = Map([]),
   strict? : Bool = false,
 ) -> InferResult raise Diag {
+  // #36：Never 底型逐文件唯一名（同包多文件不重复声明）——先算，进预留表
+  let never_name = never_type_name(stem)
   let ctx : InferCtx = {
     groups: Map([]),
     group_order: [],
-    // #14-2a：Never 预留——{"never":{...}} 的派生名不得占用底型名
-    used_type_names: ["Never"],
+    // #14-2a + #35 + #36：内建/预置类型名预留——派生 struct/enum 名不得占用
+    // 语言类型名，否则 `{"a":{"int":{...}}}` 派生 `Int` 会遮蔽内建 → 产物非法
+    // （保险丝 J0002）。表 = tyenv.parse_type 识别为类型的名字 ∪ {Never, <Stem>Never}。
+    used_type_names: [
+      "Never", "Int", "Int32", "Int64", "Double", "String", "Bool", "Array", "Map",
+      "Unit", "Byte", "Char", "UInt", "UInt32", "UInt64", "Float", never_name,
+    ],
     name_cache: Map([]),
     aliases: [],
     map_escape_keys: [],
@@ -229,6 +238,7 @@ fn infer_shapes(
     hint_keys: [],
     taken,
     stem,
+    never_name,
     fname,
   }
   // 顶层对象组预命名 capitalize(stem)（config.json → Config——D-7 命名同源）
@@ -321,6 +331,7 @@ fn infer_shapes(
     aliases: ctx.aliases,
     map_hits: ctx.map_hits,
     uses_never: ctx.uses_never,
+    never_name: ctx.never_name,
   }
 }
 
@@ -363,13 +374,25 @@ fn null_leak_diag(ctx : InferCtx, name : String, label : String) -> Diag {
 }
 
 ///|
+/// Never 底型名（#36）——逐文件唯一 `<Stem>Never`：同包多文件各发一份
+/// `pub enum <Stem>Never {}` 不再重复声明（moon [4051]），且文件自持
+/// （不依赖 sibling 是否先 import）。
+/// 复用 `sanitize_stem`（与 binding 同源）；非 A-Z 起头时加 `T` 前缀保合法。
+fn never_type_name(stem : String) -> String {
+  let s = sanitize_stem(stem)
+  let c = capitalize(s)
+  let base = if is_legal_type_name(c) { c } else { "T" + s }
+  base + "Never"
+}
+
+///|
 /// Never 底型引用（#14-2a）——JTStruct 裸名（build 回吃时经产物自带
-/// enum Never {} 定义 resolve 分化为 JTEnum；零构造器 = 免费护栏：
+/// enum <Stem>Never {} 定义 resolve 分化为 JTEnum；零构造器 = 免费护栏：
 /// 元素位写值会被 moon [4014] 与 jsonmbt J3004 双侧拦下）
 fn never_ty(ctx : InferCtx) -> JType {
   ctx.uses_never = true
   note_never_hint(ctx)
-  JTStruct("Never")
+  JTStruct(ctx.never_name)
 }
 
 ///|
@@ -377,11 +400,12 @@ fn never_ty(ctx : InferCtx) -> JType {
 fn note_never_hint(ctx : InferCtx) -> Unit {
   if !ctx.hint_keys.contains("never-placeholder") {
     ctx.hint_keys.push("never-placeholder")
+    let n = ctx.never_name
     ctx.hints.push(
       Diag(
         code=JNeverHint,
         loc=dummy_loc(),
-        message="empty container placeholder: Array[Never] / Array[Never?] / Map[String, Never] — replace Never with the real element type once a non-empty sample exists (or re-import)",
+        message="empty container placeholder: Array[\{n}] / Array[\{n}?] / Map[String, \{n}] — replace \{n} with the real element type once a non-empty sample exists (or re-import)",
         help=Some(
           "--strict rejects empty containers without clues (pre-0.1 behavior)",
         ),

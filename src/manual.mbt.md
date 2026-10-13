@@ -260,9 +260,12 @@ JSON 只有十进制）；`Double` 保**源拼写透传**（`1.50` 原样输出�
 
 ### 空容器占位（#14-2a）
 
-推断无线索的空数组/空对象 → `Array[Never]` / `Map[String, Never]`
-（产物自带 `pub enum Never {}` 零构造器定义——**免费护栏**：元素位写值
+推断无线索的空数组/空对象 → `Array[<Stem>Never]` / `Map[String, <Stem>Never]`
+（产物自带 `pub enum <Stem>Never {}` 零构造器定义——**免费护栏**：元素位写值
 在 moon 编译期 `[4014]` 红）；`--strict` 恢复旧拒绝行为（J4001/J4002）。
+**#36：底型名逐文件唯一**（`empty_containers.json` → `Empty_containersNever`）——
+同目录多文件各发一份底型定义不再重复声明（moon `[4051]`），文件仍自持
+（不依赖 sibling 是否先 import）。
 
 ## L0 类型面（速查版）
 

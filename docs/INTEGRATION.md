@@ -26,6 +26,14 @@
 加 stem 前缀（`Code` → `BCode`）——先到先得、单文件零变化。要语义名，
 待 `--type-name-map`（#6-4）。子目录各自带 `moon.pkg` 则天然隔离，无此问题。
 
+**底型声明同理（issue #36）**：空容器的底型是 **per-file** 声明
+（`pub enum <Stem>Never {}`，codegen 按 `uses_never` 发）。**本版起名逐文件唯一**
+（`demo.json` → `DemoNever`），同包多文件不再重复声明。旧形态是写死的
+`pub enum Never {}`——实测某 88 张 JSON 的 MoonBit 仓里 **78 张各发一份**，
+整包 `moon check` 必红（删掉 77 份重复即全绿）。新形态下文件仍**自持**：
+不依赖 sibling 是否先 import，重建单张即单张可用，`--check` 幂等也不受
+同目录其它文件影响。
+
 ## 三个前提（缺一即失效）
 
 ### ① 所在目录必须带 `moon.pkg`

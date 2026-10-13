@@ -878,6 +878,47 @@ test "import : 跨文件 taken 参与 dedup 兜底（#24）" {
 }
 
 ///|
+test "import : 派生名让位内建类型名（#35）" {
+  // 派生 struct 名撞 MoonBit 内建类型名 → 遮蔽 → 产物非法（保险丝 J0002）。
+  // 实测：{"a":{"int":"x"}} 派生 `Int` → 字段 `a : Int` 被解析成内建 Int32 → J3004；
+  //       {"a":{"char":"x"}} 派生 `Char` → 产物自身 check 报 J2007（非 L0 类型）。
+  // 预留表 = tyenv.parse_type 识别为类型的名字 ∪ {Never}。
+  let o1 = @src.import_source("{\"a\": {\"int\": \"x\"}}", path="t.json", stem="t")
+  inspect(o1.content.contains("pub struct Int2"), content="true")
+  inspect(o1.content.contains("pub struct Int {"), content="false")
+  inspect(o1.content.contains("a : Int2"), content="true")
+  let o2 = @src.import_source("{\"a\": {\"char\": \"x\"}}", path="t.json", stem="t")
+  inspect(o2.content.contains("pub struct Char2"), content="true")
+  // 内建族整体不产裸名
+  let o3 = @src.import_source(
+    "{\"a\": {\"string\": \"s\"}, \"b\": {\"bool\": \"b\"}, \"c\": {\"unit\": \"u\"}}",
+    path="t.json",
+    stem="t",
+  )
+  for bad in ["pub struct String {", "pub struct Bool {", "pub struct Unit {"] {
+    inspect(o3.content.contains(bad), content="false")
+  }
+}
+
+///|
+test "import : Never 底型逐文件唯一名（#36）" {
+  // 多文件同包各发 `pub enum Never {}` → moon [4051] 重复声明
+  // （实测 mizchi/actrun 78/86 文件各一份）。处方 (b)：逐文件唯一名
+  // <Stem>Never——自持性保留、无 import 顺序依赖。
+  let o = @src.import_source("{\"a\": []}", path="t.json", stem="t")
+  inspect(o.content.contains("pub enum TNever {}"), content="true")
+  inspect(o.content.contains("a : Array[TNever]"), content="true")
+  inspect(o.content.contains("pub enum Never {}"), content="false")
+  // 自持：产物能被自己 build 回吃（新 enum 名须可解析）
+  let built = @src.build_source(o.content, path="t.json.mbt")
+  inspect(built, content="{\"a\":[]}")
+  // 不同 stem → 不同 Never 名（同目录可共存）
+  let o2 = @src.import_source("{\"a\": []}", path="u.json", stem="u")
+  inspect(o2.content.contains("pub enum UNever {}"), content="true")
+  inspect(o2.content.contains("a : Array[UNever]"), content="true")
+}
+
+///|
 test "D-5 嵌套 enum payload：payload 类型是 enum 名时须 resolve（审阅 P2）" {
   // 带参构造器的形参类型为 enum 名：parse_type 产 JTStruct，查表分化
   // 需要 resolve_custom——root/struct 字段侧都 resolve，唯 payload 漏
@@ -918,26 +959,27 @@ test "D-5 嵌套 enum payload：payload 类型是 enum 名时须 resolve（审�
 
 ///|
 test "import : 空容器 Never 占位默认产出（#14-2a）——J4001/J4002 不再整张拒" {
-  // 孤立空数组 → Array[Never] + Never 定义 + rc-0 占位 hint + 往返无损
+  // 孤立空数组 → Array[<Stem>Never] + <Stem>Never 定义 + rc-0 占位 hint + 往返无损
+  // （#36：底型名逐文件唯一——stem "t" → TNever）
   let o1 = @src.import_source("{\"exemptions\": []}", path="t.json", stem="t")
-  inspect(o1.content.contains("pub enum Never {}"), content="true")
-  inspect(o1.content.contains("exemptions : Array[Never]"), content="true")
+  inspect(o1.content.contains("pub enum TNever {}"), content="true")
+  inspect(o1.content.contains("exemptions : Array[TNever]"), content="true")
   inspect(o1.hints.length() >= 1, content="true")
-  inspect(o1.hints[0].render().contains("Array[Never]"), content="true")
+  inspect(o1.hints[0].render().contains("Array[TNever]"), content="true")
   inspect(
     @src.build_source(o1.content, path="t.json.mbt"),
     content="{\"exemptions\":[]}",
   )
-  // 空对象 → Map[String, Never]
+  // 空对象 → Map[String, <Stem>Never]
   let o2 = @src.import_source("{\"cfg\": {}}", path="t.json", stem="t")
-  inspect(o2.content.contains("cfg : Map[String, Never]"), content="true")
+  inspect(o2.content.contains("cfg : Map[String, TNever]"), content="true")
   inspect(
     @src.build_source(o2.content, path="t.json.mbt"),
     content="{\"cfg\":{}}",
   )
-  // 顶层空数组 → pub let t : Array[Never] = []
+  // 顶层空数组 → pub let t : Array[TNever] = []
   let o3 = @src.import_source("[]", path="t.json", stem="t")
-  inspect(o3.content.contains("pub let t : Array[Never] = []"), content="true")
+  inspect(o3.content.contains("pub let t : Array[TNever] = []"), content="true")
   inspect(@src.build_source(o3.content, path="t.json.mbt"), content="[]")
   // 两级启发优先级保持：同文件他处同名非空字段给出精确类型（D-1 主路径）
   let o4 = @src.import_source(
@@ -947,15 +989,15 @@ test "import : 空容器 Never 占位默认产出（#14-2a）——J4001/J4002 �
   )
   inspect(o4.content.contains("Array[Int32]"), content="true")
   inspect(o4.content.contains("Never"), content="false")
-  // Never 预留：元素对象首键 never 会派生组名 Never——预留迫其去重（Never2）
+  // Never 名预留：元素对象首键 never 会派生组名 Never——预留迫其去重（Never2）
   let o5 = @src.import_source(
     "{\"items\": [{\"never\": 1}]}",
     path="t.json",
     stem="t",
   )
-  // 无空容器 → 无 Never 定义；预留生效 → 派生名不是 Never（Never2 兜底）
+  // 无空容器 → 无底型 enum 定义；预留生效 → 派生名不是 Never（Never2 兜底）
   inspect(
-    o5.content.split("pub enum Never").length() == 1 &&
+    o5.content.split("pub enum ").length() == 1 &&
     !o5.content.contains("pub struct Never {"),
     content="true",
   )
@@ -1140,9 +1182,9 @@ test "import : 数组元素 null 提升 Option（#20）——契约要求产出�
     @src.build_source(o1.content, path="t.json.mbt"),
     content="{\"xs\":[null,1,2]}",
   )
-  // 全 null 数组 → Array[Never?]（零信息 + 可空；Never 底型范式）
+  // 全 null 数组 → Array[<Stem>Never?]（零信息 + 可空；Never 底型范式）
   let o2 = @src.import_source("[null, null]", path="t.json", stem="t")
-  inspect(o2.content.contains("Array[Never?]"), content="true")
+  inspect(o2.content.contains("Array[TNever?]"), content="true")
   inspect(
     @src.build_source(o2.content, path="t.json.mbt"),
     content="[null,null]",
