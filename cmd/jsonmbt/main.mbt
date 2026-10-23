@@ -47,7 +47,8 @@ fn usage() -> Int32 {
   write_stderr(
     "jsonmbt — typed JSON source files for MoonBit (.json.mbt)\n" +
     "usage:\n" +
-    "  jsonmbt build <file.json.mbt...|-> [-o <out.json>|-]\n" +
+    "  jsonmbt build <file.json.mbt...|-> [-o <out.json>|-] [--pretty] [--indent <n>]\n" +
+    "  --indent <n> sets the width (1..16) and only applies with --pretty\n" +
     "  jsonmbt check <file.json.mbt...|->\n" +
     "  jsonmbt import <file.json|-> [-o <out.json.mbt>|-] [--check] [--fmt] [--type-name-map <map.json>] [--strict] [--input json|jsonc]\n" +
     "  jsonmbt import <file.json> --fill <file.json.mbt> [--check] — refill the value body from the declared type header\n" +
