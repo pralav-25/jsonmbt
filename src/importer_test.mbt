@@ -867,14 +867,52 @@ test "import : 跨文件 taken 参与 dedup 兜底（#24）" {
   // 同目录已有别文件产物声明 Status/Status2（taken）：本文件的异签名组
   // 在 stem 前缀也被占后，dedup 兜底**不得**退回未前缀的 taken 名
   // （实测形态 = MoUI 同目录 17 文件 → moon [4051] 声明两次）
+  // #37 随迁：后续组进**前缀家族**号段（BStatus2），不再抢全局裸名号段
   let json = "{\"k\": 1, \"one\": {\"status\": 1, \"evidence\": 2}, \"two\": {\"status\": 1, \"route\": 2}}"
   let outcome = @src.import_source(json, path="b.json", stem="b", taken_names=[
     "A", "Status", "Status2",
   ])
   inspect(outcome.content.contains("pub struct BStatus"), content="true")
-  inspect(outcome.content.contains("pub struct Status3"), content="true")
+  inspect(outcome.content.contains("pub struct BStatus2"), content="true")
   // 不得复用 taken 里的裸 Status
   inspect(outcome.content.contains("pub struct Status {"), content="false")
+  inspect(outcome.content.contains("pub struct Status3"), content="false")
+}
+
+///|
+test "#37 : taken 前缀化家族自洽——后续同基名组不退回未前缀 dedup" {
+  // MoUI checks/ 同目录 17 文件实测形态：harmonyos.json 的多个 Status 基
+  // 名组曾产 HarmonyosStatus + Status5/Status6/Status7（首组前缀化、后续
+  // 组退回未前缀 dedup 抢全局裸名号段）——名字与源文件失联且随目录
+  // 文件数/顺序漂移。修后：同 stem 家族自洽号段
+  let json = "{\"a\": {\"status\": 1, \"x\": 2}, \"b\": {\"status\": 1, \"y\": 2}, \"c\": {\"status\": 1, \"z\": 2}}"
+  let outcome = @src.import_source(
+    json,
+    path="harmonyos.json",
+    stem="harmonyos",
+    taken_names=["Status"],
+  )
+  inspect(
+    outcome.content.contains("pub struct HarmonyosStatus "),
+    content="true",
+  )
+  inspect(
+    outcome.content.contains("pub struct HarmonyosStatus2"),
+    content="true",
+  )
+  inspect(
+    outcome.content.contains("pub struct HarmonyosStatus3"),
+    content="true",
+  )
+  // 不得出现与源文件失联的裸名号段
+  inspect(outcome.content.contains("pub struct Status2"), content="false")
+  inspect(outcome.content.contains("pub struct Status3"), content="false")
+  // 产物回吃合法（前缀家族名与类型引用同链更新）
+  let _ = @src.build_source(
+    outcome.content,
+    path="harmonyos.json.mbt",
+    expected_name="harmonyos",
+  )
 }
 
 ///|

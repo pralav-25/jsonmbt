@@ -27,6 +27,6 @@ description = "typed JSON source files for MoonBit (.json.mbt) — moon-checked,
 
 import {
   "moonbitlang/parser@0.4.4",
-  "moonbitlang/lexer@0.4.2",
+  "moonbitlang/lexer@0.4.4",
   "moonbitlang/x@0.5.5",
 }

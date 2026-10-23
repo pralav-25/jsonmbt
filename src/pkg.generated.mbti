@@ -6,7 +6,7 @@ import {
 }
 
 // Values
-pub fn build_source(String, path? : String, expected_name? : String, pretty? : Bool, indent? : Int?) -> String raise Diag
+pub fn build_source(String, path? : String, expected_name? : String, pretty? : Bool, indent? : Int32?) -> String raise Diag
 
 pub fn build_value(String, path? : String, expected_name? : String) -> Json raise Diag
 
@@ -79,7 +79,7 @@ pub(all) enum JCode {
   JNeverHint
   JDrift
 }
-pub fn JCode::exit_code(Self) -> Int
+pub fn JCode::exit_code(Self) -> Int32
 pub fn JCode::num(Self) -> String
 
 // Type aliases

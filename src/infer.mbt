@@ -428,12 +428,16 @@ fn bad_name_map_diag(ctx : InferCtx, msg : String) -> Diag raise Diag {
 fn alloc_type_name(ctx : InferCtx, base : String) -> String raise Diag {
   // issue #4：嵌套 struct 机器派生名（Id/Code 等）在同目录多文件时撞
   // moon 包命名空间——后来者加 stem 前缀（先到先得，单文件零变化）
+  // #37：前缀化作用于**整个家族**——后续同基名组在家族号段内 dedup
+  //（HarmonyosStatus, HarmonyosStatus2, …），不退回未前缀 dedup 抢
+  // 全局裸名号段（曾产 HarmonyosStatus + Status5/6/7——名字与源文件
+  // 失联且随目录文件数/顺序漂移）
   let primed0 = if is_legal_type_name(base) { base } else { "Root" }
   let derived : String = if ctx.taken.contains(primed0) &&
     primed0 != capitalize(ctx.stem) {
     let prefixed = capitalize(ctx.stem) + primed0
-    if is_legal_type_name(prefixed) && !slot_taken(ctx, prefixed) {
-      prefixed
+    if is_legal_type_name(prefixed) {
+      dedup_fallback(ctx, prefixed)
     } else {
       dedup_fallback(ctx, primed0)
     }

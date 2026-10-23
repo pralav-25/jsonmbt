@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### Fixed（issue #37：taken 前缀化家族自洽——后续同基名组不退回未前缀 dedup）
+
+- **现象**：`alloc_type_name` 的跨文件撞名前缀化（#4）只对组「首个」名生效——同文件**后续**同基名组在前缀名被占后退回**未前缀** `dedup`，去抢全局裸名号段（MoUI `checks/` 17 文件实测：`harmonyos.json` 产 `HarmonyosStatus, Status5, Status6, Status7`，期望 `HarmonyosStatus, HarmonyosStatus2, HarmonyosStatus3`）。非正确性缺陷（#24 后无撞名、产物能编译），属命名面质量：名字与源文件失联 + 号段随目录文件数/顺序漂移
+- **修法（issue 一行改法）**：前缀化分支 `dedup_fallback(primed0)` → `dedup_fallback(prefixed)`——前缀合法时整个家族在 `<Stem><Base>` 号段内自洽 dedup（前缀非法才退回裸名，保留原兜底）
+- **锚**：层 1 新锚「#37 taken 前缀化家族自洽」先红（现状 `Status2/3` 实证）后绿 + 回吃合法断言；#24 层 1/层 2 锚随迁（`BStatus + Status3` → `BStatus + BStatus2`——「不复用 taken 裸名」本质断言不变，层 2 加「不得抢全局裸名号段」反向断言）——145 → **146**
+- **附带（#38 批时差遗留补齐）**：`moon info` 重生成三个 mbti 的 `Int`→`Int32` 接口形跟随（#38 批 `moon info` 跑在全仓 fmt 归一之前——源码类型位置已归一、mbti 未跟，语义零变化，D-13 规范拼写）
+- 门禁：层 1 **146/146**、层 2 **44/44**
+
+### Dependencies（lexer@0.4.2→0.4.4：`\x00` regex 与新 moonc 不兼容——#33 同族传递依赖处置）
+
+- **现象**：#38 批全仓 `moon fmt` 打破 `.mooncakes` 编译缓存后，`moon test/check` 首次真重编 `moonbitlang/lexer` 即红：`lexer.mbt:348` 的 `re"^...[\x00-\x7F]"` 报 `[4172]`（新 moonc regex 不支持 `\x00` 转义，要求 `\u{0}`）。此前全绿靠旧编译器产的缓存——**工具链升级不 invalidate 依赖包编译缓存**（PITFALLS #50 同根的编译侧形态：缓存掩盖上游不兼容直到被打破）
+- **上游修复链**（parser 仓 2026-10-19~22）：`3b0e26a` fix(lexer) 去 hex escape → `16b7aca` release lexer 0.4.4 with the ASCII byte literal fix
+- **修法**：根 `moon.mod` `moonbitlang/lexer@0.4.2 → 0.4.4`（moon 解析接受根声明覆盖 parser@0.4.4 钉的 0.4.2；parser 本体不动——10-22 上游 `45f96a6` 移除 `parse_file` API，暂不追）——lexer 0.4.4 装上后 146 锚全绿
+- **锚**：既有全量即锚（test/check 红→绿）
+
 ### Fixed（issue #38 / D-14：保留字表与 moon 本尊硬同步 + check 端硬关键字判定 J2008——语言事实表单源化）
 
 - **现象**：自持 40 词保留字表与 moon 本尊关键字表脱同步——`{"extend":1}` import **rc=0 静默产出非法 `.json.mbt`**（moonc `[3002]` Parse error）；`var` 类词被库 parser 拒、兜成误导性 **J0002「internal generator bug」**。同类第三次（#28 词法区间 / #35 内建类型名 / #38 关键字表），病根同一 =「jsonmbt 自持 moon 语言事实副本 → 必然脱同步」

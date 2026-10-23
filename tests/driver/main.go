@@ -1008,9 +1008,10 @@ func caseNameMapRepeatedBase(exe, dir string) error {
 	return nil
 }
 
-// #24：跨文件 taken 参与 dedup 兜底——同目录第二文件的异签名组在 stem 前缀
-// 也被占后，不得退回未前缀的 taken 名（否则 moon [4051] 声明两次）。
-// 实测形态 = MoUI 同目录多文件同基名组。
+// #24 + #37：跨文件 taken 参与 dedup 兜底——同目录第二文件的异签名组在 stem
+// 前缀也被占后，不得退回未前缀的 taken 名（否则 moon [4051] 声明两次）；
+// #37 随迁：后续组进**前缀家族**号段（BStatus2），不再抢全局裸名号段
+//（实测形态 = MoUI 同目录多文件同基名组）。
 func caseCrossFileTakenDedup(exe, dir string) error {
 	writeFile(dir, "a.json", `{"k":"a","one":{"status":1,"evidence":2},"two":{"status":1,"route":2}}`)
 	writeFile(dir, "b.json", `{"k":"b","one":{"status":1,"evidence":2},"two":{"status":1,"route":2}}`)
@@ -1022,11 +1023,14 @@ func caseCrossFileTakenDedup(exe, dir string) error {
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "b.json.mbt"))
 	s := string(b)
-	if !strings.Contains(s, "pub struct BStatus") || !strings.Contains(s, "pub struct Status3") {
-		return fmt.Errorf("b 未按 taken 选名（期望 BStatus + Status3）:\n%s", s)
+	if !strings.Contains(s, "pub struct BStatus") || !strings.Contains(s, "pub struct BStatus2") {
+		return fmt.Errorf("b 未按 taken 家族自洽选名（期望 BStatus + BStatus2，#37）:\n%s", s)
 	}
 	if strings.Contains(s, "pub struct Status {") {
 		return fmt.Errorf("b 复用 taken 裸名 Status（moon [4051] 隐患）:\n%s", s)
+	}
+	if strings.Contains(s, "pub struct Status3") {
+		return fmt.Errorf("b 抢全局裸名号段 Status3（#37：应进 BStatus 家族号段）:\n%s", s)
 	}
 	return nil
 }
