@@ -8,28 +8,28 @@ extern "C" fn jsonmbt_read_stdin() -> Bytes = "jsonmbt_read_stdin"
 ///|
 #cfg(target="native")
 #borrow(data)
-extern "C" fn jsonmbt_write_stderr(data : Bytes, len : Int) -> Unit = "jsonmbt_write_stderr"
+extern "C" fn jsonmbt_write_stderr(data : Bytes, len : Int32) -> Unit = "jsonmbt_write_stderr"
 
 ///|
 #cfg(target="native")
 #borrow(from, to)
 extern "C" fn jsonmbt_rename(
   from : Bytes,
-  from_len : Int,
+  from_len : Int32,
   to : Bytes,
-  to_len : Int,
-) -> Int = "jsonmbt_rename"
+  to_len : Int32,
+) -> Int32 = "jsonmbt_rename"
 
 ///|
 #cfg(target="native")
 #borrow(data)
-extern "C" fn jsonmbt_write_stdout(data : Bytes, len : Int) -> Unit = "jsonmbt_write_stdout"
+extern "C" fn jsonmbt_write_stdout(data : Bytes, len : Int32) -> Unit = "jsonmbt_write_stdout"
 
 ///|
 #cfg(target="native")
 #borrow(cmd)
-extern "C" fn jsonmbt_run_cmd(cmd : Bytes, len : Int) -> Int = "jsonmbt_run_cmd"
+extern "C" fn jsonmbt_run_cmd(cmd : Bytes, len : Int32) -> Int32 = "jsonmbt_run_cmd"
 
 ///|
 #cfg(target="native")
-extern "C" fn jsonmbt_is_windows() -> Int = "jsonmbt_is_windows"
+extern "C" fn jsonmbt_is_windows() -> Int32 = "jsonmbt_is_windows"

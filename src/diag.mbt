@@ -17,6 +17,7 @@ pub(all) enum JCode {
   JBadTop // J2005 顶层出现 struct/pub let 之外的声明
   JDupStruct // J2006 重复 struct 定义名
   JBadFieldType // J2007 struct 字段类型超出 L0 支持面（Unit/Arrow/Tuple/跨包名…）
+  JHardKeywordField // J2008 struct 字段名为 moon 硬关键字（#38 D-14③——对齐 moonc Parse error 分级，闭 mooncakes parser 库字段位假绿缝）
   JNotLiteral // J3001 表达式超出 L0 纯字面量子集（D-8 ② fail loud）
   JMapKey // J3002 Map 字面量键非字符串
   JBadLiteral // J3003 字面量类型 JSON 无对应（Char/Byte/Bytes/Regex/UInt…）
@@ -54,6 +55,7 @@ pub fn JCode::num(self : JCode) -> String {
     JBadTop => "J2005"
     JDupStruct => "J2006"
     JBadFieldType => "J2007"
+    JHardKeywordField => "J2008"
     JNotLiteral => "J3001"
     JMapKey => "J3002"
     JBadLiteral => "J3003"
@@ -79,7 +81,7 @@ pub fn JCode::num(self : JCode) -> String {
 ///|
 /// rc（D-10 五值表）：4 = 用法·IO 错；1 = 输入错（校验/类型错）；
 /// 2 = 检测到漂移/差异（import --check / diff，P1.5 起占用）；hint 级码 rc 0。
-pub fn JCode::exit_code(self : JCode) -> Int {
+pub fn JCode::exit_code(self : JCode) -> Int32 {
   match self {
     JUsage | JIO => 4
     JTaggedEnumHint | JNeverHint => 0
@@ -100,7 +102,7 @@ pub(all) suberror Diag {
 }
 
 ///|
-fn pos_of(loc : @basic.Location) -> (Int, Int) {
+fn pos_of(loc : @basic.Location) -> (Int32, Int32) {
   // bol = 行首字节偏移，cnum = 文件级字节偏移 → 列 = cnum - bol + 1（编译器口径）
   let p = loc.start
   (p.lnum, p.cnum - p.bol + 1)

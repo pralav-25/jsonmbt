@@ -1477,6 +1477,145 @@ func caseJsoncInputProfile(exe, dir string) error {
 	return nil
 }
 
+// ── D-14⑤（#38）层 2 双锚：保留字全表 + 判决一致性 ──
+//
+// 词表 = 层 2 独立防线自持副本（防线不读 jsonmbt 源码——独立性纪律），
+// 与 src/moon_facts.mbt 同步维护；提取源 .mooncakes/moonbitlang/parser
+// @0.4.4 lexer/keywords.mbt（2026-10-13 机械提取）。moon 工具链关键字表
+// 演化（保留词升硬/硬词降级）→ 词表内判决一致性破 → 锚红即漂移显性化
+// （fmt 金门同构设计）；全新增关键字不在表内——同步义务随 moon_facts.mbt
+// 更新时一并落到此处。
+var d14HardKeywords = []string{
+	"as", "else", "extern", "fn", "if", "let",
+	"var", "proof_assert", "proof_let", "const", "match", "using",
+	"mut", "type", "struct", "enum", "extenum", "trait",
+	"derive", "while", "break", "continue", "import", "return",
+	"throw", "raise", "try", "catch", "pub", "priv",
+	"readonly", "true", "false", "_", "test", "loop",
+	"for", "in", "impl", "with", "guard", "async",
+	"is", "suberror", "and", "letrec", "enumview", "extend",
+	"noraise", "defer", "errdefer", "lexmatch", "lexscan", "where",
+	"declare", "nobreak", "nocancel", "package",
+}
+
+var d14ReservedKeywords = []string{
+	"module", "move", "ref", "static", "super", "unsafe",
+	"use", "await", "dyn", "abstract", "do", "final",
+	"macro", "override", "typeof", "virtual", "yield", "local",
+	"method", "alias", "assert",
+}
+
+// caseReservedWordsFullTable：D-14⑤ 锚①——79 词逐词 import（应全部走
+// `k_` 改名 + field-alias 通道），产物批量落同一影子 moon 项目一次
+// check：零 error（修复前 extend 直出 → moonc [3002] 即红）、零 [0035]
+//（生成器零警告零错误形态——保留词也改名）。
+func caseReservedWordsFullTable(exe, dir string) error {
+	if _, err := exec.LookPath("moon"); err != nil {
+		fmt.Println("SKIP reserved-words-full-table（moon 缺席）")
+		skippedCases++
+		return nil
+	}
+	shadow := filepath.Join(dir, "shadow_words")
+	os.MkdirAll(shadow, 0o755)
+	os.WriteFile(filepath.Join(shadow, "moon.mod"), []byte("name = \"p/wtable\"\nversion = \"0.1.0\"\n"), 0o644)
+	os.WriteFile(filepath.Join(shadow, "moon.pkg"), []byte("\n"), 0o644)
+	words := append(append([]string{}, d14HardKeywords...), d14ReservedKeywords...)
+	for i, w := range words {
+		stem := fmt.Sprintf("rw%03d", i+1)
+		rc, _, stderr, err := runExeWithStdin(exe, dir, fmt.Sprintf("{\"%s\": 1}", w),
+			"import", "-", "-o", filepath.Join(shadow, stem+".json.mbt"))
+		if err != nil {
+			return fmt.Errorf("%s(%q) import rc err=%v", stem, w, err)
+		}
+		if rc != 0 {
+			return fmt.Errorf("%s(%q) import rc=%d——表内词应全部走改名通道:\n%s", stem, w, rc, stderr)
+		}
+	}
+	cmd := exec.Command("moon", "check")
+	cmd.Dir = shadow
+	out, _ := cmd.CombinedOutput() // rc 恒 127 陷阱（PITFALLS #47）——判决看输出不看 rc
+	s := string(out)
+	if strings.Contains(s, "Error:") {
+		return fmt.Errorf("表内词 import 产物在 moon check 下有 error（表同步破洞/改名通道失效）:\n%s", s)
+	}
+	if strings.Contains(s, "[0035]") {
+		return fmt.Errorf("表内词 import 产物带保留字警告 [0035]（生成器零警告形态破洞）:\n%s", s)
+	}
+	return nil
+}
+
+// caseCheckVerdictConsistency：D-14⑤ 锚②——79 词手写字段文件，jsonmbt
+// check 与真 moon check 判决逐词一致：58 硬词双红（jsonmbt J1001/J2008
+// + moonc Parse error；修复前 extend 是 jsonmbt 假绿 = 本锚红面）；
+// 21 保留词双绿（moon 仅 [0035] 警告级合法——分级对齐 moonc，非
+// 「比 moon 严」）。硬/保留词分两个影子项目，包级判决不互相连坐。
+func caseCheckVerdictConsistency(exe, dir string) error {
+	if _, err := exec.LookPath("moon"); err != nil {
+		fmt.Println("SKIP check-verdict-consistency（moon 缺席）")
+		skippedCases++
+		return nil
+	}
+	mkShadow := func(name string) string {
+		d := filepath.Join(dir, name)
+		os.MkdirAll(d, 0o755)
+		os.WriteFile(filepath.Join(d, "moon.mod"), []byte(fmt.Sprintf("name = \"p/%s\"\nversion = \"0.1.0\"\n", name)), 0o644)
+		os.WriteFile(filepath.Join(d, "moon.pkg"), []byte("\n"), 0o644)
+		return d
+	}
+	// 手写文件：binding == stem（D-7）、struct 名逐文件唯一（同包不撞）
+	handwrite := func(idx int, word string) string {
+		return fmt.Sprintf("struct S%03d {\n  %s : Int\n}\npub let v%03d : S%03d = S%03d::{ %s: 1 }\n",
+			idx, word, idx, idx, idx, word)
+	}
+	// 硬词项目：jsonmbt 逐词必红（J1001 库拒 或 J2008 自持判定——
+	// extend 类缝位词正是本锚标的），moon 批量 check 每文件必被点名
+	hardShadow := mkShadow("shadow_verdict_hard")
+	for i, w := range d14HardKeywords {
+		f := fmt.Sprintf("v%03d.json.mbt", i+1)
+		writeFile(hardShadow, f, handwrite(i+1, w))
+		rc, _, _, err := runExe(exe, hardShadow, "check", f)
+		if err != nil {
+			return fmt.Errorf("硬词 %q check err=%v", w, err)
+		}
+		if rc == 0 {
+			return fmt.Errorf("硬关键字 %q：jsonmbt check 放行（假绿——J1001/J2008 应拒；moonc 下必 Parse error）", w)
+		}
+	}
+	cmd := exec.Command("moon", "check")
+	cmd.Dir = hardShadow
+	out, _ := cmd.CombinedOutput()
+	s := string(out)
+	if !strings.Contains(s, "Error:") {
+		return fmt.Errorf("硬词项目 moon check 无 error（moonc 判决意外——词表或文件形态漂移）:\n%s", s)
+	}
+	for i := range d14HardKeywords {
+		f := fmt.Sprintf("v%03d.json.mbt", i+1)
+		if !strings.Contains(s, f) {
+			return fmt.Errorf("moonc 未拒硬词文件 %s（%q）——判决不一致:\n%s", f, d14HardKeywords[i], s)
+		}
+	}
+	// 保留词项目：jsonmbt 逐词必绿（J2008 只查硬词），moon 批量零 error
+	resvShadow := mkShadow("shadow_verdict_resv")
+	for i, w := range d14ReservedKeywords {
+		f := fmt.Sprintf("v%03d.json.mbt", i+1)
+		writeFile(resvShadow, f, handwrite(i+1, w))
+		rc, _, stderr, err := runExe(exe, resvShadow, "check", f)
+		if err != nil {
+			return fmt.Errorf("保留词 %q check err=%v", w, err)
+		}
+		if rc != 0 {
+			return fmt.Errorf("保留词 %q：jsonmbt check 拒（rc=%d——moonc 警告级合法，拒即「比 moon 严」）:\n%s", w, rc, stderr)
+		}
+	}
+	cmd2 := exec.Command("moon", "check")
+	cmd2.Dir = resvShadow
+	out2, _ := cmd2.CombinedOutput()
+	if strings.Contains(string(out2), "Error:") {
+		return fmt.Errorf("保留词项目 moon check 有 error（判决不一致——moonc 应仅 [0035] 警告）:\n%s", out2)
+	}
+	return nil
+}
+
 var cases = []testCase{
 	{"J2003-emdash-stderr-bytes", caseEmdashStderr},
 	{"migrate-astral-bytes", caseMigrateAstralBytes},
@@ -1520,6 +1659,8 @@ var cases = []testCase{
 	{"default-output-name", caseDefaultOutputName},
 	{"doctor-pipe-hint", caseDoctorPipeHint},
 	{"jsonc-input-profile", caseJsoncInputProfile},
+	{"reserved-words-full-table", caseReservedWordsFullTable},
+	{"check-verdict-consistency", caseCheckVerdictConsistency},
 }
 
 func defaultExe() string {

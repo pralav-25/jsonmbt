@@ -39,7 +39,7 @@ fn quiet_cmd(cmd : String) -> String {
 }
 
 ///|
-fn run_quiet(cmd : String) -> Int {
+fn run_quiet(cmd : String) -> Int32 {
   let full = quiet_cmd(cmd)
   let bytes = @unicode.to_utf8_bytes(full)
   jsonmbt_run_cmd(bytes, bytes.length())
@@ -233,7 +233,7 @@ fn shadow_root() -> String? {
 /// 影子 fmt 命令：必须 cd 进影子项目再裸跑——实测（2026-10-08 三点
 // 对照探针）`moon fmt <path>` 把 path 当**当前项目内**的包过滤 pattern，
 // 项目外路径静默跳过且 rc=0（假成功）；cd 后子 shell 内的项目根=影子
-fn run_moon_fmt_in(dir : String) -> Int {
+fn run_moon_fmt_in(dir : String) -> Int32 {
   let cmd = if jsonmbt_is_windows() == 1 {
     "cd /d \"\{dir}\" && moon fmt >NUL 2>&1"
   } else {
@@ -337,7 +337,7 @@ fn fmt_shadow_check(files : Array[(String, String, String)]) -> ShadowOut {
 }
 
 ///|
-fn run_doctor(root_arg : String) -> Int {
+fn run_doctor(root_arg : String) -> Int32 {
   if !dir_exists(root_arg) {
     return jdiag_exit(@src.JIO, "doctor: '\{root_arg}' is not a directory")
   }

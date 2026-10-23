@@ -23,9 +23,9 @@
 /// `//` 或 `/*`）——NORMAL 直写 / pending 暂存同一份转换
 fn comment_to_spaces(
   view : Array[Char],
-  n : Int,
-  start : Int,
-) -> (Array[Char], Int) {
+  n : Int32,
+  start : Int32,
+) -> (Array[Char], Int32) {
   let out : Array[Char] = []
   let mut i = start
   if view[i + 1] == '/' {
@@ -61,7 +61,7 @@ fn comment_to_spaces(
 /// 块注释闭合预检（#32-7）：`/*` 起点向后找不到 `*/` = 未闭合——D-9
 /// 「不收」清单项，调用方不消解、剩余原文透传给 parser 拒（曾消费到
 /// EOF 静默消解成合法输入——json 严格档拒而 jsonc 档收，档间自相矛盾）
-fn block_comment_closed(view : Array[Char], n : Int, start : Int) -> Bool {
+fn block_comment_closed(view : Array[Char], n : Int32, start : Int32) -> Bool {
   let mut i = start + 2
   while i + 1 < n {
     if view[i] == '*' && view[i + 1] == '/' {

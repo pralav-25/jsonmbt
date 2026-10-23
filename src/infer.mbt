@@ -9,22 +9,13 @@
 //   rc 0 不阻断）／null → Option[T]（基型由其他样本聚合；全 null J4003）
 
 ///|
-let reserved_labels : Array[String] = [
-  "fn", "let", "mut", "const", "return", "match", "if", "else", "loop", "while",
-  "for", "in", "break", "continue", "true", "false", "struct", "enum", "type", "trait",
-  "impl", "pub", "priv", "package", "import", "test", "as", "extern", "raise", "try",
-  "catch", "defer", "guard", "when", "extenum", "async", "backed", "where", "is",
-  "unit",
-]
-
-///|
-fn is_reserved_label(name : String) -> Bool {
-  reserved_labels.contains(name)
-}
+/// 保留字判定与词法区间表已迁 src/moon_facts.mbt（D-14④ 单源集中——
+/// 旧自持 40 词表与 moon 本尊脱同步，`extend` 静默产出非法产物 #38）
 
 ///|
 /// 合法字段 label：小写字母开头（snake/驼峰）/下划线开头/非 ASCII（中文）；
-/// 大写开头非法（类型名域）、保留字非法（探针①）；
+/// 大写开头非法（类型名域）、保留字非法（79 词全量口径——moon 硬 58 +
+/// 保留 21，D-14①：撞词走 `k_` 改名 + field-alias，产物零警告零错误）；
 /// **全字符验证**——其余字符限 [a-zA-Z0-9_] 与非 ASCII（Vitro rules.json
 /// 实锤：曾只验首字符，"memory.dump" 带点键直进产物 → J1001——审 A4
 /// 形态的 label 通道变体）
@@ -48,39 +39,11 @@ fn is_legal_label(name : String) -> Bool {
 }
 
 ///|
-/// moon 词法标识符区间表（lexer/regex.mbt 的 RE_LIDENT_START——#28：
-/// 曾用「码点 ≥ 0x80 一律合法」近似，π(03C0)/А(0400)/א(05D0) 等**表外**
-/// 字母被误判合法 → 直出非法 label 触发保险丝、报成 generator bug；
-/// 修后表外键自动落入 Map 逃生门/保留字改名/J4011 既有分派。表内代表：
-/// é(00E9) 中(4E2D) あ(3042) 가(AC00) 😀(1F600)；表外代表：π NBSP(U+3000
-/// 空隙) 全角０(FF10)。勘误旧认知：「非 ASCII 一律合法」是过度概括）
-let ident_ranges : Array[(Int, Int)] = [
-  (0x5F, 0x5F), // _
-  (0x61, 0x7A), // a-z
-  (0xA1, 0xAC),
-  (0xAE, 0x2AF),
-  (0x1100, 0x11FF),
-  (0x1E00, 0x1EFF),
-  (0x2070, 0x209F),
-  (0x2150, 0x218F),
-  (0x2E80, 0x2EFF),
-  (0x2FF0, 0x2FFF),
-  (0x3001, 0x30FF),
-  (0x31C0, 0x9FFF),
-  (0xAC00, 0xD7FF),
-  (0xF900, 0xFAFF),
-  (0xFE00, 0xFE0F),
-  (0xFE30, 0xFE4F),
-  (0x1F000, 0x1FBFF),
-  (0x20000, 0x2A6DF),
-  (0x2A700, 0x2EBEF),
-  (0x2F800, 0x2FA1F),
-  (0x30000, 0x323AF),
-  (0xE0100, 0xE01EF),
-]
+/// 词法区间表 ident_ranges 已迁 src/moon_facts.mbt（D-14④——#28 事实
+/// 表单源集中；查询函数留在消费侧）
 
 ///|
-fn in_ident_ranges(cp : Int) -> Bool {
+fn in_ident_ranges(cp : Int32) -> Bool {
   for r in ident_ranges {
     if cp >= r.0 && cp <= r.1 {
       return true
@@ -155,12 +118,12 @@ priv enum SampleTy {
 ///|
 priv struct ShapeGroup {
   fields : Array[FieldSamples] // 按首见样本键序（label 为改名后形态）
-  field_index : Map[String, Int] // 原始 JSON 键 → 字段下标
+  field_index : Map[String, Int32] // 原始 JSON 键 → 字段下标
   mut resolved_name : String // 定名后回填（walk 期间 JTStruct 名即此）
   keys : Array[String] // 首见键序——原始 JSON 键（#11：诊断报字段集差异；#14-3：容器路径分组）
-  mut count : Int // 样本计数（分布计数——人工建模分组直接可用）
+  mut count : Int32 // 样本计数（分布计数——人工建模分组直接可用）
   paths : Array[String] // 出现过的容器路径（首见序去重——#14-3 按容器分组）
-  path_counts : Map[String, Int] // 路径 → 该处样本计数（分组小计的真值）
+  path_counts : Map[String, Int32] // 路径 → 该处样本计数（分组小计的真值）
 }
 
 ///|
@@ -208,23 +171,24 @@ fn signature_of_keys(keys : Array[String]) -> String {
 fn infer_shapes(
   root : Json,
   stem~ : String,
-  fname? : String = "<json>",
-  taken? : Array[String] = [],
-  type_name_map? : Map[String, String] = Map([]),
-  strict? : Bool = false,
+  fname~ : String = "<json>",
+  taken~ : Array[String] = [],
+  type_name_map~ : Map[String, String] = Map([]),
+  strict~ : Bool = false,
 ) -> InferResult raise Diag {
   // #36：Never 底型逐文件唯一名（同包多文件不重复声明）——先算，进预留表
   let never_name = never_type_name(stem)
+  // #35 预留表 = moon_facts 内建类型名 + 本文件 Never 底型名
+  let reserved_type_names = builtin_type_names.copy()
+  reserved_type_names.push(never_name)
   let ctx : InferCtx = {
     groups: Map([]),
     group_order: [],
     // #14-2a + #35 + #36：内建/预置类型名预留——派生 struct/enum 名不得占用
     // 语言类型名，否则 `{"a":{"int":{...}}}` 派生 `Int` 会遮蔽内建 → 产物非法
-    // （保险丝 J0002）。表 = tyenv.parse_type 识别为类型的名字 ∪ {Never, <Stem>Never}。
-    used_type_names: [
-      "Never", "Int", "Int32", "Int64", "Double", "String", "Bool", "Array", "Map",
-      "Unit", "Byte", "Char", "UInt", "UInt32", "UInt64", "Float", never_name,
-    ],
+    // （保险丝 J0002）。表 = src/moon_facts.mbt 的 builtin_type_names（#35，
+    // D-14④ 单源集中）∪ {<Stem>Never}（#36 逐文件底型名）。
+    used_type_names: reserved_type_names,
     name_cache: Map([]),
     aliases: [],
     map_escape_keys: [],
@@ -565,7 +529,7 @@ fn last_path_segment(path : String) -> String {
 fn walk_value(
   ctx : InferCtx,
   j : Json,
-  path? : String = "$",
+  path~ : String = "$",
 ) -> JType raise Diag {
   match j {
     Null => JTNullLike // 值位 null：上层样本聚合决定 Option
@@ -729,7 +693,7 @@ fn walk_as_struct(
   ctx : InferCtx,
   keys : Array[String],
   o : Map[String, Json],
-  path? : String = "$",
+  path~ : String = "$",
 ) -> JType raise Diag {
   // 签名 = 原始 JSON 键集（键集语义属 JSON 真相；改名只发生在 label 侧）
   let sig = signature_of_keys(keys)
@@ -810,7 +774,7 @@ fn merge_samples(
   samples : Array[SampleTy],
   label : String,
   allow_empty_arr~ : Bool,
-  at_map? : Bool = false,
+  at_map~ : Bool = false,
 ) -> JType raise Diag {
   let mut acc : JType? = None
   let mut nulls = 0
@@ -848,7 +812,7 @@ fn lub(
   a : JType,
   b : JType,
   in_array~ : Bool,
-  at_map? : Bool = false,
+  at_map~ : Bool = false,
 ) -> JType raise Diag {
   match (a, b) {
     (JTInt, JTInt) => JTInt
@@ -883,8 +847,7 @@ fn lub(
     // (JTNullLike,t) 静默吞掉的空洞被暴露——Int? vs Int? 落 hetero）。
     // Option 外壳合流：内层递归 lub（同型保型、Int/Int64 上浮等语义
     // 不变）；null 由上方 NullLike 臂先行兜底（不收紧内层）
-    (JTOption(x), JTOption(y)) =>
-      JTOption(lub(ctx, x, y, in_array~, at_map~))
+    (JTOption(x), JTOption(y)) => JTOption(lub(ctx, x, y, in_array~, at_map~))
     (JTOption(x), t) | (t, JTOption(x)) =>
       JTOption(lub(ctx, x, t, in_array~, at_map~))
     _ => raise hetero_diag(ctx, in_array, "\{a.show()} vs \{b.show()}", at_map~)
@@ -969,9 +932,9 @@ fn keyset_drift_diag(
 }
 
 ///|
-fn cmp_rows(a : String, b : String) -> Int {
+fn cmp_rows(a : String, b : String) -> Int32 {
   // "×602 { ... }" 前缀数字比较
-  fn count_of(s : String) -> Int {
+  fn count_of(s : String) -> Int32 {
     let stop = match s.find(" ") {
       Some(i) => i
       None => s.length()
@@ -993,7 +956,7 @@ fn hetero_diag(
   ctx : InferCtx,
   in_array : Bool,
   what : String,
-  at_map? : Bool = false,
+  at_map~ : Bool = false,
 ) -> Diag raise Diag {
   // Map 逃生门路径的失败须点名键因（#13 文案错位修复）：真因是「键不是
   // 合法字段名 → 整对象被退化为 Map、异型值无法统一」，不是跨样本异构

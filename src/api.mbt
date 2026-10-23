@@ -5,7 +5,7 @@
 /// 校验 .json.mbt 源（失败 raise Diag，成功 Unit；无任何写副作用）
 pub fn check_source(
   src : String,
-  path? : String = "",
+  path~ : String = "",
   expected_name? : String,
 ) -> Unit raise Diag {
   let doc = analyze(src, path~, expected_name?)
@@ -21,10 +21,10 @@ pub fn check_source(
 /// 是值语义等价（审 P1 勘误：原表述缺前提限定））
 pub fn build_source(
   src : String,
-  path? : String = "",
+  path~ : String = "",
   expected_name? : String,
-  pretty? : Bool = false,
-  indent? : Int? = None,
+  pretty~ : Bool = false,
+  indent~ : Int32? = None,
 ) -> String raise Diag {
   let doc = analyze(src, path~, expected_name?)
   if pretty {
@@ -39,7 +39,7 @@ pub fn build_source(
 /// 值树形态（import→build 往返锚与未来工具消费）
 pub fn build_value(
   src : String,
-  path? : String = "",
+  path~ : String = "",
   expected_name? : String,
 ) -> Json raise Diag {
   let doc = analyze(src, path~, expected_name?)
@@ -68,6 +68,9 @@ pub(all) struct ImportOutcome {
 /// 数字/非法开头→x_ 前缀、空→x。类型命名（capitalize）共用此基。
 /// #31：D-7 期望名全链统一走本函数（import 自校验 + CLI build/check +
 /// doctor）——绑定名 == sanitize_stem(stem)，常规 stem 恒等
+/// D-14②：判定只查 moon **硬**关键字 58 词（moonc Parse error 级——
+/// stem 撞硬词的 binding 在 moon 下必非法，必须前缀）；21 保留词不收
+/// （moonc 警告级合法，收紧会打碎存量 D-7 契约——挂观察项）
 pub fn sanitize_stem(name : String) -> String {
   // 审 P2-1：保留字文件名（test.json/type.json 等 16 个实测 15 个中招）
   // 直接作 binding 是非法 MoonBit——同族 is_legal_label 查保留字而此路
@@ -75,7 +78,7 @@ pub fn sanitize_stem(name : String) -> String {
   if name == "" {
     return "x"
   }
-  if is_reserved_label(name) {
+  if is_hard_keyword(name) {
     return "x_" + name
   }
   let buf = StringBuilder()
@@ -98,11 +101,11 @@ pub fn sanitize_stem(name : String) -> String {
     first == '_' ||
     first.to_int() >= 0x80
   let bound = if legal_head { out } else { "x_" + out }
-  // 复查至不动点（#32-6）：清洗可产生新的坏形态——"Type"→"type"（保留字）、
-  // "_"→"_"（moon 拒裸下划线 binding）——曾直接返回，大写保留字 stem 全链
-  // 死锁（import 保险丝甩锅 J0002 generator bug）。x_ 前缀后不再可能命中，
-  // 一轮即不动点
-  if is_reserved_label(bound) || bound == "_" {
+  // 复查至不动点（#32-6）：清洗可产生新的坏形态——"Type"→"type"（硬关键字）、
+  // "+"→"_"（裸下划线 binding，`_` 在硬表内一并命中）——曾直接返回，大写
+  // 保留字 stem 全链死锁（import 保险丝甩锅 J0002 generator bug）。
+  // x_ 前缀后不再可能命中，一轮即不动点。口径同上：只查硬词（D-14②）
+  if is_hard_keyword(bound) {
     "x_" + bound
   } else {
     bound
@@ -116,12 +119,12 @@ pub fn sanitize_stem(name : String) -> String {
 /// stem：D-7 命名（pub let stem；struct 名 capitalize(stem)）
 pub fn import_source(
   json_text : String,
-  path? : String = "<json>",
+  path~ : String = "<json>",
   stem~ : String,
-  taken_names? : Array[String] = [],
-  type_name_map? : Map[String, String] = Map([]),
-  strict? : Bool = false,
-  jsonc? : Bool = true, // D-9（#22）：false = 裸 RFC 8259（注释/尾逗号/BOM 全拒）
+  taken_names~ : Array[String] = [],
+  type_name_map~ : Map[String, String] = Map([]),
+  strict~ : Bool = false,
+  jsonc~ : Bool = true, // D-9（#22）：false = 裸 RFC 8259（注释/尾逗号/BOM 全拒）
 ) -> ImportOutcome raise Diag {
   // stem 前置清洗（化石批量实锤："array_address.c" 文件名直接作 stem 产
   // 非法 binding/类型名——曾靠生成保险丝兜底成 internal 错，现正名）
@@ -220,14 +223,18 @@ pub fn json_value_eq(a : Json, b : Json) -> Bool {
 pub fn fill_source(
   json_text : String,
   existing_src : String,
-  path? : String = "<json>",
-  fill_path? : String = "",
+  path~ : String = "<json>",
+  fill_path~ : String = "",
   stem? : String, // 期望名来源（缺省 = 不校验——#32-5④：fill 只重写值体，
   // 头/绑定名来自盘上产物，期望名不应绑**源 JSON** 文件名）
-  jsonc? : Bool = true, // D-9（#22）：与 import_source 同口径
+  jsonc~ : Bool = true, // D-9（#22）：与 import_source 同口径
 ) -> String raise Diag {
   let root = json_parse(
-    if jsonc { strip_jsonc(json_text) } else { json_text },
+    if jsonc {
+      strip_jsonc(json_text)
+    } else {
+      json_text
+    },
     fname=path,
   )
   // 既有产物必须先过自家校验（合法 .json.mbt 才有可用的类型头）
@@ -296,7 +303,11 @@ pub fn fill_source(
   // 回吃保险丝（#32-5⑤，与 import 同款）：头逐字节保留 + 新值体的合成
   // 产物丢回自家校验器——render 链任何非法形态在落盘前 fail loud
   // （曾靠层外 moon check 才发现 enum 位 Map 形态）
-  check_source(content, path=(if fill_path == "" { path + ".mbt" } else { fill_path }), expected_name?) catch {
+  check_source(
+    content,
+    path=if fill_path == "" { path + ".mbt" } else { fill_path },
+    expected_name?,
+  ) catch {
     e => {
       let detail : String = if e is Diag(..) {
         e.render()

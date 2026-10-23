@@ -92,7 +92,7 @@ jsonmbt: error [J3004] examples/server.json.mbt:9:9 expects Int32, got String li
 
 ## importer（已落地）
 
-`jsonmbt import x.json` 将从 JSON 反推 `struct` 头 + 直译值，生成合法 `.json.mbt`——存量 JSON 资产的迁移入口。**输入默认吃 JSONC**（注释 / 尾逗号 / 文件首 BOM 在 pre-pass 等长空格消解——tsconfig / eslintrc / settings.json 类真实文件直接进；`--input json` 退回裸 RFC 8259，D-9 判据：只收字符层可消解特性，单引号串/无引号 key/`NaN` 等扩值域形态永拒）。**含换行的长文案产 `#|` 多行**（`--fill` 回写同理——`#|` 手写真源经 build→改值→回写的教师循环不磨损写作形态）。真实数据形态的确定性出路：**保留字字段名**（`where`）自动改名 + `field-alias` 注记往返还原；**键集漂移**数组按 D-5 手工建模 enum；**键域强校验**（有限键集要「拼错红」）用**带参枚举数组**——`Map[AlgoE, String]` 的裸构造器键位 moon 本尊即 `[4014]` 拒（语言层边界；带参枚举数组拼错变体写时红，降级 `[{"case","value"}]`）；批量场景用 **`jsonmbt migrate`** 三榜侦察（能直进 CI 对账的 / 仅风格差的 / 拒收带原因的）先探后迁。P0 探针已用合成矩阵与真实数据完成实证（含 2,469 张冻结档案压测，未判形态全部落在已知逃生门内，详见 [PLAN §9](docs/PLAN.md)）。
+`jsonmbt import x.json` 将从 JSON 反推 `struct` 头 + 直译值，生成合法 `.json.mbt`——存量 JSON 资产的迁移入口。**输入默认吃 JSONC**（注释 / 尾逗号 / 文件首 BOM 在 pre-pass 等长空格消解——tsconfig / eslintrc / settings.json 类真实文件直接进；`--input json` 退回裸 RFC 8259，D-9 判据：只收字符层可消解特性，单引号串/无引号 key/`NaN` 等扩值域形态永拒）。**含换行的长文案产 `#|` 多行**（`--fill` 回写同理——`#|` 手写真源经 build→改值→回写的教师循环不磨损写作形态）。真实数据形态的确定性出路：**保留字字段名**（`where`/`extend` 等 moon 关键字全量口径——硬/保留分级见 [PLAN §8 D-14](docs/PLAN.md)）自动改名 + `field-alias` 注记往返还原；**键集漂移**数组按 D-5 手工建模 enum；**键域强校验**（有限键集要「拼错红」）用**带参枚举数组**——`Map[AlgoE, String]` 的裸构造器键位 moon 本尊即 `[4014]` 拒（语言层边界；带参枚举数组拼错变体写时红，降级 `[{"case","value"}]`）；批量场景用 **`jsonmbt migrate`** 三榜侦察（能直进 CI 对账的 / 仅风格差的 / 拒收带原因的）先探后迁。P0 探针已用合成矩阵与真实数据完成实证（含 2,469 张冻结档案压测，未判形态全部落在已知逃生门内，详见 [PLAN §9](docs/PLAN.md)）。
 
 ## 在你的仓里接入（moon 静态门禁）
 

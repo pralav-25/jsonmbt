@@ -250,11 +250,17 @@ test "manual : 转义宽集（moon 接受 ⇒ jsonmbt 接受）" {
 JSON 只有十进制）；`Double` 保**源拼写透传**（`1.50` 原样输出，不归一为
 `1.5`——避免解析-再格式化的精度伪影）。
 
-### 键名两通道（#13）
+### 键名两通道（#13/#38）
 
-- **保留字键**（`where`/`type`… 加 `_` 即合法）：import 自动改名
-  （`where_`）+ 文件头注记 `// jsonmbt: field-alias S.label = "原键"`
-  还原（手写文件也可用——注记行文法/指向错误 = J3009）；
+- **保留字键**（moon 关键字 `where`/`type`/`extend`/`var`… 加 `_` 即
+  合法；口径 = 58 硬关键字 + 21 保留词全量，`src/moon_facts.mbt` 单源
+  表）：import 自动改名（`where_`）+ 文件头注记
+  `// jsonmbt: field-alias S.label = "原键"` 还原（手写文件也可用——
+  注记行文法/指向错误 = J3009）。**手写字段名直接写硬关键字
+  （`extend : String`）= J2008 拒**——moonc 下必 Parse error，check 端
+  对齐分级；`unit`/`when`/`backed` 不是 moon 关键字、直写合法；
+  保留词字段名（`module` 等 21 词）check 放行（moon 仅警告级合法），
+  import 产物照旧改名（生成器零警告形态）；
 - **不可改名键**（`a.b` 带点、大写开头）：该对象整体走
   `Map[String, V]` 逃生门（同值类型才能统一）。
 
@@ -407,11 +413,7 @@ test "manual : 键域强校验——带参枚举数组" {
     #|  QuickSort("分治分区，递归排序"),
     #|]
   inspect(
-    @src.build_source(
-      src,
-      path="s.json.mbt",
-      expected_name="suggestions",
-    ),
+    @src.build_source(src, path="s.json.mbt", expected_name="suggestions"),
     content="[{\"case\":\"BubbleSort\",\"value\":\"相邻交换，逐步冒泡\"},{\"case\":\"QuickSort\",\"value\":\"分治分区，递归排序\"}]",
   )
 }

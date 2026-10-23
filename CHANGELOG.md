@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Fixed（issue #38 / D-14：保留字表与 moon 本尊硬同步 + check 端硬关键字判定 J2008——语言事实表单源化）
+
+- **现象**：自持 40 词保留字表与 moon 本尊关键字表脱同步——`{"extend":1}` import **rc=0 静默产出非法 `.json.mbt`**（moonc `[3002]` Parse error）；`var` 类词被库 parser 拒、兜成误导性 **J0002「internal generator bug」**。同类第三次（#28 词法区间 / #35 内建类型名 / #38 关键字表），病根同一 =「jsonmbt 自持 moon 语言事实副本 → 必然脱同步」
+- **根因（双 parser 缝，PITFALLS #49）**：import 保险丝的自检端走 mooncakes `moonbitlang/parser` 库 0.4.4——与 moonc 是**两份代码**，字段位 `extend` 库放行 vs moonc 0.10.15 硬拒，「接受」判决不能跨 parser 通用
+- **修法（D-14 八条，2026-10-13 终案）**：① 新增 `src/moon_facts.mbt` **三表单源集中**（#38 关键字 **58 硬 + 21 保留**、#28 词法区间、#35 内建类型名——每表注明提取源 `.mooncakes/moonbitlang/parser@0.4.4 lexer/keywords.mbt` + 日期，一次性脚本机械提取不人肉抄）；② 发射端口径 = **79 词全量**（生成器零警告零错误形态），删 `when`/`backed`/`unit` 三个 moon 表没有的失效词；③ `sanitize_stem` **只同步 58 硬词**（保留词 stem = moonc 警告级合法不收——D-7 存量零破坏）；④ **check 端真修 J2008**：struct 遍历处自持「字段名不得为硬关键字」判定（语义 = 对齐 moonc Parse error 分级：硬词拒/保留词放行，非「比 moon 严」）——「jsonmbt check 通过 ≈ moonc 可编译」承诺闭合
+- **行为变化**：`unit`/`when`/`backed` 字段名 改名→**直出**（修过度改名）；新增硬词（`var`/`derive`/`with`/`extend`…21 个）与保留词（`module`…21 个）字段名 直出坏文件/J0002 → **改名 + field-alias 注记**（往返无损）
+- **锚（红→绿全流程）**：层 1 J2008 锚先红（手写 `extend` 字段 = check 假绿 BUILD-SUCCEEDED 实证）后绿 + 行为锚 ×5（三词直出/新词改名/保留词改名/撞名两级/sanitize_stem 分级）——139 → **145**；层 2 双锚 `reserved-words-full-table`（79 词 import → 同一影子 moon 项目**批量一次** `moon check`：零 error 零 `[0035]`）+ `check-verdict-consistency`（79 词手写文件 jsonmbt check 与真 moon check **判决逐词一致**：58 硬双红 / 21 保留双绿〔moon 带 `[0035]` 警告〕；硬/保留词分两个影子项目防连坐）——**旧 exe 证红**（`var` import rc=4 J0002 形态 + `extend` check 假绿，stash→重建旧 exe→跑红→恢复→重建→绿，J9 埋雷义务）→ 重建后 **44/44**
+- **漂移雷达**：双锚常驻 = 表同步雷达（moon 保留词升硬/硬词降级 → 词表内判决一致性破 → CI 红）；moon 新增**全新**关键字不在 79 词表内——同步义务随 `moon_facts.mbt` 更新时一并落到层 2 词表副本（防线独立性：不读 jsonmbt 源码）
+- **文档**：skill 1a/2 条目重写（79 词口径 + J2008 + 三词直出）、manual 键名两通道、README 口径引用、PLAN §8 D-14 + §5 里程碑；MOONBIT_PITFALLS 新增 **#50**（`moon fmt --check` 增量假绿——本批全仓 `moon fmt` 暴露 #34 后存量欠账约 200 行：类型别名/具名参数 `?`→`~`/括号剥除/长行折行/尾空行，纯形态零语义，145 锚全绿实证安全，随本批归一）
+- 门禁：层 1 **145/145**、层 2 **44/44**（moon 在场真跑）、`moon info` 接口面 +`JHardKeywordField`（J2008）、`moon fmt --check` 全仓真绿
+
 ### Fixed（issue #36：空容器底型名逐文件唯一 `<Stem>Never`——同包多文件不重复声明）
 
 - **现象**：codegen 逐文件发 `pub enum Never {}`（per-file `uses_never` 驱动）——整仓 JSON 迁入同一 moon 包时 **N 份重复声明** → moon `[4051]`。实测 `mizchi/actrun` 88 张 → 86 张 import 通过 → 同目录 `moon check` 红，**78/86 文件各声明一次**；脚本删掉 77 份重复（留 1）即 **全绿（0 error）** ⇒ 该重复是唯一拦路者。**旗舰场景**（整仓 JSON → 一个 moon 包）直接阻断，`docs/INTEGRATION.md` §0 只覆盖了 `pub struct` 无冲突

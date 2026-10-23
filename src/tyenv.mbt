@@ -173,7 +173,8 @@ fn parse_type(t : @syntax.Type) -> JType {
         | ("Byte", 0)
         | ("Char", 0)
         | ("UInt", 0)
-        | ("UInt32", 0) // fmt 归一拼写——不列则被 struct 分支误吞、诊断劣化
+        | ("UInt32", 0)
+        // fmt 归一拼写——不列则被 struct 分支误吞、诊断劣化
         | ("UInt64", 0)
         | ("Float", 0) => JTUnsupported(type_show_of(t)) // 有 MoonBit 定义但 JSON 无对应/非 L0 的内建
         (_, 0) => JTStruct(id) // 自定义 struct（无参裸名）；未定义名由 lookup_struct 报

@@ -46,7 +46,7 @@ fn unescape_string(raw : String, loc : @basic.Location) -> String raise Diag {
           // \u{...}：花括号内 1..6 位十六进制（MoonBit 文档形态）
           if i + 1 < n && view[i + 1] == '{' {
             let mut j = i + 2
-            let mut acc : UInt = 0U
+            let mut acc : UInt32 = 0U
             let mut digits = 0
             let mut closed = false
             while j < n {
@@ -124,7 +124,7 @@ fn unescape_string(raw : String, loc : @basic.Location) -> String raise Diag {
 }
 
 ///|
-fn four_hex(a : Char, b : Char, c : Char, d : Char) -> Int? {
+fn four_hex(a : Char, b : Char, c : Char, d : Char) -> Int32? {
   match (hex_digit(a), hex_digit(b), hex_digit(c), hex_digit(d)) {
     (Some(w), Some(x), Some(y), Some(z)) =>
       Some(w * 4096 + x * 256 + y * 16 + z)
@@ -133,7 +133,7 @@ fn four_hex(a : Char, b : Char, c : Char, d : Char) -> Int? {
 }
 
 ///|
-fn hex_digit(ch : Char) -> Int? {
+fn hex_digit(ch : Char) -> Int32? {
   if ch >= '0' && ch <= '9' {
     Some(ch.to_int() - '0'.to_int())
   } else if ch >= 'a' && ch <= 'f' {

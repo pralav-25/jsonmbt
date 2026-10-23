@@ -8,10 +8,10 @@
 ///|
 priv struct JParser {
   view : Array[Char] // Char 级访问（StringView 索引是 code unit——surrogate 陷阱）
-  n : Int
-  mut pos : Int
-  mut line : Int // 当前行（1 起）
-  mut bol : Int // 当前行首偏移（列 = pos - bol + 1，编译器口径）
+  n : Int32
+  mut pos : Int32
+  mut line : Int32 // 当前行（1 起）
+  mut bol : Int32 // 当前行首偏移（列 = pos - bol + 1，编译器口径）
   fname : String
 }
 
@@ -25,7 +25,7 @@ fn JParser::new(src : String, fname : String) -> JParser {
 }
 
 ///|
-fn jp_error(p : JParser, code : JCode, msg : String, pos? : Int = -1) -> Diag {
+fn jp_error(p : JParser, code : JCode, msg : String, pos~ : Int32 = -1) -> Diag {
   let at = if pos >= 0 { pos } else { p.pos }
   // bol 是「错误位置所在行」的行首——从记录点重算（换行已即时推进 line/bol）
   Diag(
@@ -41,7 +41,7 @@ fn jp_error(p : JParser, code : JCode, msg : String, pos? : Int = -1) -> Diag {
 }
 
 ///|
-fn chars_slice(view : Array[Char], start : Int, stop : Int) -> String {
+fn chars_slice(view : Array[Char], start : Int32, stop : Int32) -> String {
   let buf = StringBuilder()
   for i = start; i < stop; i = i + 1 {
     buf.write_char(view[i])
@@ -95,7 +95,7 @@ fn jp_skip_ws(p : JParser) -> Unit {
 /// 码点 → `U+XXXX` 形态（十六进制，不足 4 位补零）——诊断消息用。
 /// 旧实现把**十进制**码点直接接在 `U+` 后（`]` = 93 十进制 → 报成 "U+93"，
 /// 误导定位）；十六进制才是 `U+` 惯例。
-fn cp_label(cp : Int) -> String {
+fn cp_label(cp : Int32) -> String {
   let digits = "0123456789ABCDEF".to_array()
   let mut v = cp
   let rev : Array[Char] = []
@@ -122,7 +122,7 @@ fn cp_label(cp : Int) -> String {
 }
 
 ///|
-pub fn json_parse(src : String, fname? : String = "<json>") -> Json raise Diag {
+pub fn json_parse(src : String, fname~ : String = "<json>") -> Json raise Diag {
   let p = JParser::new(src, fname)
   jp_skip_ws(p)
   let v = jp_value(p, 0)
@@ -138,7 +138,7 @@ pub fn json_parse(src : String, fname? : String = "<json>") -> Json raise Diag {
 }
 
 ///|
-fn jp_value(p : JParser, depth : Int) -> Json raise Diag {
+fn jp_value(p : JParser, depth : Int32) -> Json raise Diag {
   if depth > MAX_DEPTH {
     raise jp_error(
       p,
@@ -353,7 +353,7 @@ fn jp_string(p : JParser) -> String raise Diag {
 }
 
 ///|
-fn jp_hex4(p : JParser) -> Int raise Diag {
+fn jp_hex4(p : JParser) -> Int32 raise Diag {
   let mut v = 0
   for i = 0; i < 4; i = i + 1 {
     match jp_peek(p) {
@@ -389,7 +389,7 @@ fn jp_hex4(p : JParser) -> Int raise Diag {
 }
 
 ///|
-fn jp_array(p : JParser, depth : Int) -> Json raise Diag {
+fn jp_array(p : JParser, depth : Int32) -> Json raise Diag {
   jp_advance(p, '[')
   let arr : Array[Json] = []
   jp_skip_ws(p)
@@ -418,7 +418,7 @@ fn jp_array(p : JParser, depth : Int) -> Json raise Diag {
 }
 
 ///|
-fn jp_object(p : JParser, depth : Int) -> Json raise Diag {
+fn jp_object(p : JParser, depth : Int32) -> Json raise Diag {
   jp_advance(p, '{')
   let obj : Map[String, Json] = Map([])
   jp_skip_ws(p)

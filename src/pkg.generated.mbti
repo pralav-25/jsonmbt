@@ -58,6 +58,7 @@ pub(all) enum JCode {
   JBadTop
   JDupStruct
   JBadFieldType
+  JHardKeywordField
   JNotLiteral
   JMapKey
   JBadLiteral

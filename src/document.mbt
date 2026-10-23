@@ -28,7 +28,7 @@ const FIELD_ALIAS_PREFIX : String = "// jsonmbt: field-alias "
 
 ///|
 /// 行号定位（field-alias 注记诊断用——注记在注释里，parser 看不见）
-fn marker_loc(path : String, lnum : Int) -> @basic.Location {
+fn marker_loc(path : String, lnum : Int32) -> @basic.Location {
   {
     start: { fname: path, lnum, bol: 0, cnum: 0, },
     end: { fname: path, lnum, bol: 0, cnum: 0, },
@@ -42,8 +42,8 @@ fn marker_loc(path : String, lnum : Int) -> @basic.Location {
 fn scan_field_aliases(
   src : String,
   path : String,
-) -> Array[(String, String, String, Int)] raise Diag {
-  let out : Array[(String, String, String, Int)] = []
+) -> Array[(String, String, String, Int32)] raise Diag {
+  let out : Array[(String, String, String, Int32)] = []
   let mut lnum = 0
   for raw_line in src.split("\n") {
     lnum = lnum + 1
@@ -107,7 +107,7 @@ fn scan_field_aliases(
 /// 隐含 JSON 键集须无碰撞——防手滑，fail loud
 fn attach_field_aliases(
   structs : Map[String, StructDef],
-  marks : Array[(String, String, String, Int)],
+  marks : Array[(String, String, String, Int32)],
   path : String,
 ) -> Unit raise Diag {
   for m in marks {
@@ -178,7 +178,7 @@ fn attach_field_aliases(
 ///|
 fn analyze(
   src : String,
-  path? : String = "",
+  path~ : String = "",
   expected_name? : String,
 ) -> Doc raise Diag {
   let (impls, reports) = @parser.parse_string(src, name=path)
@@ -271,6 +271,22 @@ fn analyze(
   structs.each(fn(_, v) { defs.push(v) })
   for sd in defs {
     for f in sd.fields {
+      // J2008（#38 D-14③）：字段名硬关键字自持判定——mooncakes parser 库
+      // 对字段位 `extend` 等放行（与 moonc 两份代码关键字行为有缝，
+      // PITFALLS #49），不补判定则「check 通过 ≈ 可编译」承诺破洞。
+      // 只拒 58 硬词（moonc Parse error 分级）；21 保留词字段照旧放行
+      // （moonc 警告级 [0035] 合法——非「比 moon 严」）
+      if is_hard_keyword(f.0) {
+        raise Diag(
+          code=JHardKeywordField,
+          loc=f.2,
+          message="field label '\{f.0}' is a MoonBit hard keyword — moonc rejects it as a parse error",
+          help=Some(
+            "rename the field (e.g. '\{f.0}_') and add a field-alias marker: // jsonmbt: field-alias \{sd.name}.\{f.0}_ = \"\{f.0}\"",
+          ),
+          path~,
+        )
+      }
       scan_supported_type(f.1, f.2)
     }
   }

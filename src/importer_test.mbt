@@ -3,7 +3,7 @@
 // 生成格式快照（fmt-canonical——fmt-stable 已由 CLI 冒烟手验，PLAN §9）
 
 ///|
-fn do_import(json : String, stem? : String = "t") -> String raise @src.Diag {
+fn do_import(json : String, stem~ : String = "t") -> String raise @src.Diag {
   @src.import_source(json, path="t.json", stem~).content
 }
 
@@ -11,7 +11,7 @@ fn do_import(json : String, stem? : String = "t") -> String raise @src.Diag {
 fn expect_import_diag(
   json : String,
   code : String,
-  strict? : Bool = false,
+  strict~ : Bool = false,
 ) -> Unit {
   let d = try {
     let _ = @src.import_source(json, path="t.json", stem="t", strict~)
@@ -883,11 +883,19 @@ test "import : 派生名让位内建类型名（#35）" {
   // 实测：{"a":{"int":"x"}} 派生 `Int` → 字段 `a : Int` 被解析成内建 Int32 → J3004；
   //       {"a":{"char":"x"}} 派生 `Char` → 产物自身 check 报 J2007（非 L0 类型）。
   // 预留表 = tyenv.parse_type 识别为类型的名字 ∪ {Never}。
-  let o1 = @src.import_source("{\"a\": {\"int\": \"x\"}}", path="t.json", stem="t")
+  let o1 = @src.import_source(
+    "{\"a\": {\"int\": \"x\"}}",
+    path="t.json",
+    stem="t",
+  )
   inspect(o1.content.contains("pub struct Int2"), content="true")
   inspect(o1.content.contains("pub struct Int {"), content="false")
   inspect(o1.content.contains("a : Int2"), content="true")
-  let o2 = @src.import_source("{\"a\": {\"char\": \"x\"}}", path="t.json", stem="t")
+  let o2 = @src.import_source(
+    "{\"a\": {\"char\": \"x\"}}",
+    path="t.json",
+    stem="t",
+  )
   inspect(o2.content.contains("pub struct Char2"), content="true")
   // 内建族整体不产裸名
   let o3 = @src.import_source(
@@ -1221,7 +1229,6 @@ test "import : JSON 语法错报错码点用十六进制（#22 附带——十�
   inspect(d.contains("U+0040"), content="true")
 }
 
-
 ///|
 test "审 P1-a : 多样本可选数组合流（lub 的 JTOption 臂）" {
   // {"a":[null,1]} x {"a":[null,2]}：#20 元素位自聚合后 JTOption 流入 lub，
@@ -1277,7 +1284,10 @@ test "#26 : 含换行字符串产 #| 多行——教师循环形态保真" {
   inspect(out.contains("\"单行\""), content="true")
   // 回吃往返无损（#| 行净内容以 \n 连接——空行 = 裸标记）
   let built = @src.build_source(out, path="t.json.mbt", expected_name="t")
-  inspect(built, content="{\"items\":[\"第一行\u{5c}n第二行\u{5c}n\",\"单行\"]}")
+  inspect(
+    built,
+    content="{\"items\":[\"第一行\u{5c}n第二行\u{5c}n\",\"单行\"]}",
+  )
   // \r 不走多行（CRLF 源的行尾 \r 入值语义在读取层有歧面——转义保真）
   let cr = do_import("{\"k\":\"a\u{5c}r\u{5c}nb\"}")
   inspect(cr.contains("\"a\u{5c}r\u{5c}nb\""), content="true")
@@ -1376,7 +1386,12 @@ test "#32-5 : fill null 错位与标量 payload 多余键 fail loud（曾静默 
     #|}
     #|pub let t : Px = Px::{ x: "v" }
   let d1 = try {
-    let _ = @src.fill_source("{\"x\":null}", existing_px, path="t.json", stem="t")
+    let _ = @src.fill_source(
+      "{\"x\":null}",
+      existing_px,
+      path="t.json",
+      stem="t",
+    )
     "FILLED-BUT-DIAG-EXPECTED"
   } catch {
     e => if e is @src.Diag(..) { e.render() } else { abort("non-Diag") }
@@ -1416,7 +1431,7 @@ test "#32-4 : Some( 折形 = fmt 规范形（接值首行）——宽度常数�
 }
 
 ///|
-fn repeat_x(n : Int) -> String {
+fn repeat_x(n : Int32) -> String {
   let buf = StringBuilder()
   for _ in 0..<n {
     buf.write_char('x')
@@ -1433,7 +1448,10 @@ test "#32-15 : 键集判重与键序无关——同键集异序归单 struct（P
   )
   // a/b 为字段、值对象归同一派生 struct X（键集判重与键序无关）；
   // 字段序 = 首见样本键序（x,y）
-  inspect(out.contains("struct X {\n  x : Int32\n  y : Int32\n}"), content="true")
+  inspect(
+    out.contains("struct X {\n  x : Int32\n  y : Int32\n}"),
+    content="true",
+  )
   inspect(out.contains("struct X2 {"), content="false")
 }
 
@@ -1442,4 +1460,87 @@ test "#32-17 : 数字 malformed 进解析器内部才拒的形态——01/1./1e+
   expect_import_diag("{\"a\":01}", "J1002")
   expect_import_diag("{\"a\":1.}", "J1002")
   expect_import_diag("{\"a\":1e+}", "J1002")
+}
+
+///|
+test "#38 D-14⑥ : 失效词删除——unit/when/backed 直出（修过度改名）" {
+  // 三词曾进旧 40 词表但 moon 本尊关键字表没有——字段名合法，改名 +
+  // field-alias 是过度改名；同步后直出（无注记），产物可回吃
+  let out = do_import("{\"unit\": 1, \"when\": 2, \"backed\": 3}")
+  inspect(out.contains("unit : Int32"), content="true")
+  inspect(out.contains("when : Int32"), content="true")
+  inspect(out.contains("backed : Int32"), content="true")
+  inspect(out.contains("field-alias"), content="false")
+  let _ = @src.build_source(out, path="t.json.mbt", expected_name="t")
+}
+
+///|
+test "#38 D-14⑥ : 新增硬词走改名通道——extend/var（曾直出坏文件/J0002 误导）" {
+  // extend 曾直出非法产物（moonc [3002]）；var 曾被库 parser 拒兜成
+  // 保险丝 J0002「internal generator bug」误导——同步后双双改名 + 注记
+  let out = do_import("{\"extend\": 1, \"var\": 2}")
+  inspect(out.contains("extend_ : Int32"), content="true")
+  inspect(out.contains("var_ : Int32"), content="true")
+  inspect(
+    out.contains("// jsonmbt: field-alias T.extend_ = \"extend\"") &&
+    out.contains("// jsonmbt: field-alias T.var_ = \"var\""),
+    content="true",
+  )
+  // 往返：build 侧按注记还原原键
+  inspect(
+    @src.build_source(out, path="t.json.mbt", expected_name="t"),
+    content="{\"extend\":1,\"var\":2}",
+  )
+}
+
+///|
+test "#38 D-14⑥ : 保留词字段走改名通道——module（曾直出 [0035] 警告文件）" {
+  // 21 保留词进发射端口径（生成器零警告形态）但不进 check 端/sanitize_stem
+  let out = do_import("{\"module\": 1}")
+  inspect(out.contains("module_ : Int32"), content="true")
+  inspect(
+    out.contains("// jsonmbt: field-alias T.module_ = \"module\""),
+    content="true",
+  )
+  inspect(
+    @src.build_source(out, path="t.json.mbt", expected_name="t"),
+    content="{\"module\":1}",
+  )
+}
+
+///|
+test "#38 D-14① : 撞名两级下划线——extend 与原生 extend_ 共存" {
+  let out = do_import("{\"extend\": 1, \"extend_\": 2}")
+  inspect(
+    out.contains("extend_ : Int32") && out.contains("extend__ : Int32"),
+    content="true",
+  )
+  inspect(
+    out.contains("// jsonmbt: field-alias T.extend_ = \"extend\"") &&
+    out.contains("// jsonmbt: field-alias T.extend__ = \"extend_\""),
+    content="true",
+  )
+  inspect(
+    @src.build_source(out, path="t.json.mbt", expected_name="t"),
+    content="{\"extend\":1,\"extend_\":2}",
+  )
+}
+
+///|
+test "#38 D-14② : sanitize_stem 分级——硬词前缀、保留词/删除词直出" {
+  // 58 硬词：新增 var/derive/with 等前缀（stem 撞硬词 binding 在 moon
+  // 下必非法）；21 保留词不收（警告级合法，不破存量 D-7 契约）；
+  // 删除词 when 直出（moon 非关键字）
+  inspect(@src.sanitize_stem("var"), content="x_var")
+  inspect(@src.sanitize_stem("derive"), content="x_derive")
+  inspect(@src.sanitize_stem("with"), content="x_with")
+  inspect(@src.sanitize_stem("module"), content="module")
+  inspect(@src.sanitize_stem("when"), content="when")
+  inspect(@src.sanitize_stem("unit"), content="unit")
+  inspect(@src.sanitize_stem("backed"), content="backed")
+  // 既有口径不回归（旧表硬词仍在 58 硬表）
+  inspect(@src.sanitize_stem("type"), content="x_type")
+  inspect(@src.sanitize_stem("Match"), content="x_match")
+  inspect(@src.sanitize_stem("_"), content="x__")
+  inspect(@src.sanitize_stem("view"), content="view")
 }

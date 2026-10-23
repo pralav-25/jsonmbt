@@ -57,7 +57,7 @@ fn render_string_value(s : String) -> String {
 
 ///|
 /// 0..15 → 小写 hex 字符（\u{...} 写侧与 unescape 的 hex 读侧对齐——#32-2）
-fn hex_lc(d : Int) -> Char {
+fn hex_lc(d : Int32) -> Char {
   if d < 10 {
     (d + '0'.to_int()).unsafe_to_char()
   } else {
@@ -259,8 +259,8 @@ fn render_value(
   atab : AliasTable,
   j : Json,
   ty : JType?,
-  enums? : Map[String, EnumDef] = Map([]),
-  strict_keys? : Bool = false,
+  enums~ : Map[String, EnumDef] = Map([]),
+  strict_keys~ : Bool = false,
 ) -> String raise Diag {
   match (j, ty) {
     (Null, t) =>
@@ -351,11 +351,11 @@ fn render_value(
           "\{label}: \{render_value(table, atab, v, struct_field_type(table, name, label), enums~, strict_keys~)}",
         )
       }
-      (if entries.length() == 0 {
+      if entries.length() == 0 {
         "\{name}::{}"
       } else {
         "\{name}::{ \{entries.join(", ")}, }"
-      })
+      }
     }
     (Object(o), t) => {
       // Map 逃生门形态（推断产物的对象位只剩 Map 上下文）
@@ -372,12 +372,12 @@ fn render_value(
           "\{moonbit_escape(k)}: \{render_value(table, atab, v, vt, enums~, strict_keys~)}",
         )
       }
-      (if entries.length() == 0 {
+      if entries.length() == 0 {
         "{}"
       } else {
         // Map 单行无尾逗号（金门实证——与 record 单行的尾逗号形不同族）
         "{ \{entries.join(", ")} }"
-      })
+      }
     }
   }
 }
@@ -394,7 +394,9 @@ fn fill_enum_variant(
   ename : String,
   o : Map[String, Json],
 ) -> String raise Diag {
-  let (def, v, payload_keys) = resolve_enum_variant(table, atab, enums, ename, o)
+  let (def, v, payload_keys) = resolve_enum_variant(
+    table, atab, enums, ename, o,
+  )
   render_variant_payload(table, atab, enums, def, v, payload_keys, o)
 }
 
@@ -582,7 +584,7 @@ fn has_multiline(j : Json) -> Bool {
 ///|
 /// 行宽（UTF-8 字节数——金门实证：fmt 的宽度判定按字节，中文值 73 码点
 /// 87 字节的行被展开而同宽 ASCII 行不展）
-fn line_width(s : String) -> Int {
+fn line_width(s : String) -> Int32 {
   let mut n = 0
   for c in s {
     let cp = c.to_int()
@@ -602,7 +604,7 @@ fn line_width(s : String) -> Int {
 
 ///|
 /// 缩进串
-fn ind(n : Int) -> String {
+fn ind(n : Int32) -> String {
   let buf = StringBuilder()
   for _ in 0..<n {
     buf.write_char(' ')
@@ -618,9 +620,9 @@ fn render_block(
   atab : AliasTable,
   j : Json,
   ty : JType?,
-  indent : Int,
-  enums? : Map[String, EnumDef] = Map([]),
-  strict_keys? : Bool = false,
+  indent : Int32,
+  enums~ : Map[String, EnumDef] = Map([]),
+  strict_keys~ : Bool = false,
 ) -> String raise Diag {
   match (j, ty) {
     (v, Some(JTOption(t))) =>
@@ -640,9 +642,7 @@ fn render_block(
         for e in elems {
           match e {
             Number(_) | True | False | Null => ()
-            String(s) => if s.contains("\n") && !s.contains("\r") {
-              hit = true
-            }
+            String(s) => if s.contains("\n") && !s.contains("\r") { hit = true }
             _ => hit = true
           }
         }
@@ -654,14 +654,29 @@ fn render_block(
         for e in elems {
           // 复合元素优先单行尾逗号形（fmt 实测：元素位 record 不展开，
           // 行宽 ≤84 即单行）；超宽/#| 才递归 block 展开
-          let inline_e = render_value(table, atab, e, elem_ty, enums~, strict_keys~)
+          let inline_e = render_value(
+            table,
+            atab,
+            e,
+            elem_ty,
+            enums~,
+            strict_keys~,
+          )
           let one = ind(indent + 2) + inline_e + ","
           buf.write_string(ind(indent + 2))
           if !has_multiline(e) && line_width(one) <= FMT_LINE_WIDTH {
             buf.write_string(inline_e)
           } else {
             buf.write_string(
-              render_block(table, atab, e, elem_ty, indent + 2, enums~, strict_keys~),
+              render_block(
+                table,
+                atab,
+                e,
+                elem_ty,
+                indent + 2,
+                enums~,
+                strict_keys~,
+              ),
             )
           }
           buf.write_string(",\n")
@@ -669,17 +684,15 @@ fn render_block(
       } else {
         let parts : Array[String] = []
         for e in elems {
-          parts.push(render_value(table, atab, e, elem_ty, enums~, strict_keys~))
+          parts.push(
+            render_value(table, atab, e, elem_ty, enums~, strict_keys~),
+          )
         }
         // 填满式：行首起逐元素 append，整行超 FMT_FILL_WIDTH 断行
         let mut cur = ind(indent + 2)
         let mut first = true
         for p in parts {
-          let cand = if first {
-            cur + p + ","
-          } else {
-            cur + " " + p + ","
-          }
+          let cand = if first { cur + p + "," } else { cur + " " + p + "," }
           if !first && line_width(cand) > FMT_FILL_WIDTH {
             buf.write_string(cur)
             buf.write_string("\n")
@@ -784,7 +797,7 @@ fn field_block_line(
   label : String,
   v : Json,
   vt : JType?,
-  indent : Int,
+  indent : Int32,
   enums : Map[String, EnumDef],
   strict_keys : Bool,
 ) -> String raise Diag {
@@ -825,8 +838,8 @@ fn render_top_value(
   atab : AliasTable,
   j : Json,
   ty : JType?,
-  enums? : Map[String, EnumDef] = Map([]),
-  strict_keys? : Bool = false,
+  enums~ : Map[String, EnumDef] = Map([]),
+  strict_keys~ : Bool = false,
   prefix~ : String = "",
 ) -> String raise Diag {
   // 判定含行前缀（pub let x : T = ）——fmt 收敛界是整行宽（顶层实测 80）

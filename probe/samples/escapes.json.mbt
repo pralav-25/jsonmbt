@@ -15,4 +15,3 @@ pub let escapes : Escapes = Escapes::{
   ),
   plain: "裸 UTF-8：中文🚀",
 }
-

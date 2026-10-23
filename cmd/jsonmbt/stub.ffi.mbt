@@ -8,7 +8,7 @@ fn jsonmbt_read_stdin() -> Bytes {
 
 ///|
 #cfg(not(target="native"))
-fn jsonmbt_write_stderr(data : Bytes, len : Int) -> Unit {
+fn jsonmbt_write_stderr(data : Bytes, len : Int32) -> Unit {
   let _ = data
   let _ = len
   abort("stderr is only available in the native build")
@@ -18,10 +18,10 @@ fn jsonmbt_write_stderr(data : Bytes, len : Int) -> Unit {
 #cfg(not(target="native"))
 fn jsonmbt_rename(
   from : Bytes,
-  from_len : Int,
+  from_len : Int32,
   to : Bytes,
-  to_len : Int,
-) -> Int {
+  to_len : Int32,
+) -> Int32 {
   let _ = from
   let _ = from_len
   let _ = to
@@ -31,7 +31,7 @@ fn jsonmbt_rename(
 
 ///|
 #cfg(not(target="native"))
-fn jsonmbt_write_stdout(data : Bytes, len : Int) -> Unit {
+fn jsonmbt_write_stdout(data : Bytes, len : Int32) -> Unit {
   let _ = data
   let _ = len
   abort("stdout is only available in the native build")
@@ -39,7 +39,7 @@ fn jsonmbt_write_stdout(data : Bytes, len : Int) -> Unit {
 
 ///|
 #cfg(not(target="native"))
-fn jsonmbt_run_cmd(cmd : Bytes, len : Int) -> Int {
+fn jsonmbt_run_cmd(cmd : Bytes, len : Int32) -> Int32 {
   let _ = cmd
   let _ = len
   abort("run_cmd is only available in the native build")
@@ -47,6 +47,6 @@ fn jsonmbt_run_cmd(cmd : Bytes, len : Int) -> Int {
 
 ///|
 #cfg(not(target="native"))
-fn jsonmbt_is_windows() -> Int {
+fn jsonmbt_is_windows() -> Int32 {
   abort("platform probe is only available in the native build")
 }

@@ -36,14 +36,14 @@ fn write_stderr(s : String) -> Unit {
 ///|
 /// J 码诊断单源出口（审 P3：CLI 15 处手写 [Jxxxx] 前缀 → 统一走 Diag 构造，
 /// 码值与渲染只此一家）
-fn jdiag_exit(code : @src.JCode, msg : String, help? : String? = None) -> Int {
+fn jdiag_exit(code : @src.JCode, msg : String, help~ : String? = None) -> Int32 {
   let d = @src.Diag(code~, loc=dummy_loc(), message=msg, help~, path="")
   write_stderr(d.render())
   @src.JCode::exit_code(code)
 }
 
 ///|
-fn usage() -> Int {
+fn usage() -> Int32 {
   write_stderr(
     "jsonmbt — typed JSON source files for MoonBit (.json.mbt)\n" +
     "usage:\n" +
@@ -94,7 +94,7 @@ fn json_stem_of(path : String) -> String? {
 
 ///|
 /// --indent N 的小数字解析（0..99——无外部解析依赖）
-fn parse_small_uint(s : String) -> Int? {
+fn parse_small_uint(s : String) -> Int32? {
   if s.length() == 0 || s.length() > 2 {
     return None
   }
@@ -137,7 +137,7 @@ fn scan_taken_struct_names(target : String) -> Array[String] {
 }
 
 ///|
-fn first_space_or_end(s : String) -> Int {
+fn first_space_or_end(s : String) -> Int32 {
   match s.find(" ") {
     Some(i) => i
     None => s.length()
@@ -204,10 +204,10 @@ fn run_import(
   out_opt : String?,
   check : Bool,
   fmt : Bool,
-  type_name_map? : Map[String, String] = Map([]),
-  strict? : Bool = false,
-  jsonc? : Bool = true,
-) -> Int {
+  type_name_map~ : Map[String, String] = Map([]),
+  strict~ : Bool = false,
+  jsonc~ : Bool = true,
+) -> Int32 {
   let src = read_input(path) catch {
     e =>
       if e is @src.Diag(..) {
@@ -367,7 +367,7 @@ fn run_import(
 }
 
 ///|
-fn ext_len(path : String) -> Int {
+fn ext_len(path : String) -> Int32 {
   let base = basename(path)
   let dot = base.rev_find(".")
   match dot {
@@ -391,7 +391,7 @@ fn io_diag(msg : String) -> @src.Diag {
 }
 
 ///|
-fn print_diag_exit(e : @src.Diag) -> Int {
+fn print_diag_exit(e : @src.Diag) -> Int32 {
   write_stderr(e.render())
   @src.JCode::exit_code(e.code())
 }
@@ -455,7 +455,7 @@ fn main {
 }
 
 ///|
-fn main_rc() -> Int {
+fn main_rc() -> Int32 {
   let args = @env.args()
   if args.length() < 3 {
     return usage()
@@ -480,7 +480,10 @@ fn main_rc() -> Int {
         write = true
       } else if a == "--input" {
         if i + 1 >= args.length() {
-          return jdiag_exit(@src.JUsage, "--input requires an argument: json | jsonc")
+          return jdiag_exit(
+            @src.JUsage,
+            "--input requires an argument: json | jsonc",
+          )
         }
         match args[i + 1] {
           "json" => jsonc = false
@@ -531,7 +534,7 @@ fn main_rc() -> Int {
   let mut do_check = false
   let mut do_fmt = false // import --fmt（#10）：产物落盘后跑 moon fmt 归一
   let mut do_pretty = false
-  let mut do_indent : Int? = None // --pretty 缩进宽度（#6-1）；None = 未给（提示判据）
+  let mut do_indent : Int32? = None // --pretty 缩进宽度（#6-1）；None = 未给（提示判据）
   let mut type_map_path : String? = None // import --type-name-map <file>（#6-4）
   let mut do_strict = false // import --strict（#14-2a）：空容器严格档（如旧 J4001/J4002 拒）
   let mut strict_given = false // --strict 显式出现（审 P3：build/check 误用拒绝——同 --input 同批纪律）
@@ -588,7 +591,10 @@ fn main_rc() -> Int {
       // D-9（#22）：输入 profile 旗标——jsonc（默认）= 注释/尾逗号/BOM
       // 消解；json = 裸 RFC 8259。不复用 --strict（#14-2a 空容器档已占用）
       if i + 1 >= args.length() {
-        return jdiag_exit(@src.JUsage, "--input requires an argument: json | jsonc")
+        return jdiag_exit(
+          @src.JUsage,
+          "--input requires an argument: json | jsonc",
+        )
       }
       input_given = true
       match args[i + 1] {
@@ -724,7 +730,10 @@ fn main_rc() -> Int {
       )
     }
     if out_opt is Some(_) {
-      return jdiag_exit(@src.JUsage, "-o applies to build/import only (check writes nothing)")
+      return jdiag_exit(
+        @src.JUsage,
+        "-o applies to build/import only (check writes nothing)",
+      )
     }
     if do_pretty || do_indent is Some(_) {
       return jdiag_exit(
@@ -752,8 +761,8 @@ fn run_one(
   path : String,
   out_opt : String?,
   pretty : Bool,
-  indent : Int?,
-) -> Int {
+  indent : Int32?,
+) -> Int32 {
   let src = read_input(path) catch {
     e =>
       if e is Diag(..) {
@@ -853,8 +862,8 @@ fn run_fill(
   out_opt : String?,
   check : Bool,
   fmt : Bool,
-  jsonc? : Bool = true,
-) -> Int {
+  jsonc~ : Bool = true,
+) -> Int32 {
   let src = read_input(path) catch {
     e =>
       if e is @src.Diag(..) {

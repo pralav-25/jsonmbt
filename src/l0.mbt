@@ -7,7 +7,7 @@
 // 类型对值校验：期望类型 JType? 驱动（无注解上下文 = 自由值，仅白名单 + 深度）
 
 ///|
-const MAX_DEPTH : Int = 128
+const MAX_DEPTH : Int32 = 128
 // 深度预算（Vitro 陷阱 #28 探针法）：先取保守值，压测校准后钉死进锚；超限 J2004
 
 ///|
@@ -75,7 +75,7 @@ fn numeric_text(raw : String) -> NumParse {
   let neg = s[0] == '-'
   let digits : StringView = if neg || s[0] == '+' { s[1:] } else { s[:] }
   // 进制前缀（浮点不与进制前缀共存）
-  let base : Int = if digits.length() > 2 {
+  let base : Int32 = if digits.length() > 2 {
     match digits[0:2] {
       "0x" | "0X" => 16
       "0o" | "0O" => 8
@@ -122,7 +122,7 @@ fn numeric_text(raw : String) -> NumParse {
   }
   // acc ≤ 2^63-1（2^63 单点已上返）→ reinterpret 无损
   let v = if neg {
-    -(acc.reinterpret_as_int64())
+    -acc.reinterpret_as_int64()
   } else {
     acc.reinterpret_as_int64()
   }
@@ -130,7 +130,7 @@ fn numeric_text(raw : String) -> NumParse {
 }
 
 ///|
-fn digit_value(ch : Char) -> Int? {
+fn digit_value(ch : Char) -> Int32? {
   if ch >= '0' && ch <= '9' {
     Some(ch.to_int() - '0'.to_int())
   } else if ch >= 'a' && ch <= 'f' {
@@ -148,7 +148,7 @@ fn type_mismatch(
   loc : @basic.Location,
   expected : String,
   got : String,
-  help? : String? = None,
+  help~ : String? = None,
 ) -> Diag {
   Diag(
     code=JFieldType,
@@ -174,7 +174,7 @@ fn not_literal(loc : @basic.Location, what : String) -> Diag {
 }
 
 ///|
-fn check_depth(depth : Int, loc : @basic.Location) -> Unit raise Diag {
+fn check_depth(depth : Int32, loc : @basic.Location) -> Unit raise Diag {
   if depth > MAX_DEPTH {
     raise Diag(
       code=JDeep,
@@ -198,7 +198,7 @@ fn l0_expr(
   enums : Map[String, EnumDef],
   e : @syntax.Expr,
   ty : JType?, // 期望类型；None = 无类型上下文（自由值）
-  depth : Int,
+  depth : Int32,
 ) -> Json raise Diag {
   check_depth(depth, expr_loc(e))
   match e {
@@ -350,7 +350,7 @@ fn payload_case(
   variant : String,
   payload : @syntax.Expr,
   ty : JType?,
-  depth : Int,
+  depth : Int32,
   loc : @basic.Location,
 ) -> Json raise Diag {
   match ty {
@@ -614,7 +614,7 @@ fn l0_record(
   type_name : @syntax.TypeName?,
   fields : @list.List[@syntax.FieldDef],
   ty : JType?,
-  depth : Int,
+  depth : Int32,
   loc : @basic.Location,
 ) -> Json raise Diag {
   check_depth(depth, loc)
@@ -720,7 +720,7 @@ fn l0_map(
   enums : Map[String, EnumDef],
   elems : @list.List[@syntax.MapExprElem],
   ty : JType?,
-  depth : Int,
+  depth : Int32,
   loc : @basic.Location,
 ) -> Json raise Diag {
   check_depth(depth, loc)

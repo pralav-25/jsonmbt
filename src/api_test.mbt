@@ -261,7 +261,11 @@ test "#27 : Map 键往返反转义——解码值语义（曾静默双层转义�
 test "#32-20 : hex 形态 Int64 下界可表示即收（-0x8000000000000000 曾误拒 J3004）" {
   // 十进制下界 -9223372036854775808 已收（PLAN §9 修复实录）；hex 同值形态
   // 曾走十进制特判残留误拒——值可表示 = 应产 Int64
-  let out = @src.import_source("{\"a\":-9223372036854775808}", path="t.json", stem="t").content
+  let out = @src.import_source(
+      "{\"a\":-9223372036854775808}",
+      path="t.json",
+      stem="t",
+    ).content
   inspect(out.contains("Int64"), content="true")
   let src_hex = "struct A {\n  a : Int64\n}\npub let t : A = A::{ a: -0x8000000000000000, }\n"
   let built = @src.build_source(src_hex, path="t.json.mbt", expected_name="t")

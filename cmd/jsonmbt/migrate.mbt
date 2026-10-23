@@ -108,7 +108,7 @@ fn dir_taken_names(dir : String) -> Array[String] {
 }
 
 ///|
-fn run_migrate(root_arg : String, write : Bool, jsonc? : Bool = true) -> Int {
+fn run_migrate(root_arg : String, write : Bool, jsonc~ : Bool = true) -> Int32 {
   if !dir_exists(root_arg) {
     return jdiag_exit(@src.JIO, "migrate: '\{root_arg}' is not a directory")
   }
